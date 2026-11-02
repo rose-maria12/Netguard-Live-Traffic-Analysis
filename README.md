@@ -3,7 +3,6 @@
 [![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![Tests](https://img.shields.io/badge/tests-164%20%2F%20164%20passed%20(100%25)-success.svg)](tests/)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64%20(Npcap)-lightgrey.svg)]()
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 An end-to-end, forensic-grade network intrusion detection, active prevention, and multi-stage correlation system designed for Windows environments. NetGuard analyzes live network adapter traffic (Npcap) and offline PCAP/PCAPng packet captures through a 4-stage pipeline:
 
@@ -195,8 +194,4 @@ Comprehensive engineering, laboratory, and oral defense guides are maintained in
 3. **Encrypted Payloads**: Operates on packet headers, flow statistics, and DNS query names. It does not perform active TLS decryption or SSL inspection.
 4. **Safety Filter**: Firewall prevention strictly protects loopback (`127.0.0.1`), host interface IPs, default gateways, and local DNS resolvers from being blocked.
 
----
 
-## License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
