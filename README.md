@@ -6,13 +6,10 @@
 
 An end-to-end, forensic-grade network intrusion detection, active prevention, and multi-stage correlation system designed for Windows environments. NetGuard analyzes live network adapter traffic (Npcap) and offline PCAP/PCAPng packet captures through a 4-stage pipeline:
 
-**Packet Ingestion → Flow Reconstruction → Behavioral Feature Windows → Dual-Engine Detection (Deterministic Rules + Isolation Forest ML) → Alert Deduplication → Union-Find Incident Correlation → 0–100 Prioritization Scoring → Windows Defender Firewall Active Containment → SOC Web Dashboard & Forensic Reports.**
 
----
 
 ## Key Highlights & Verification Status
 
-- **Automated Test Suite:** **164 / 164 PASSED (100%)** across 30 test files (`pytest`).
 - **Live Packet Capture:** Npcap + Scapy integration with interface discovery, pause/resume, bounded queue backpressure, dropped packets accounting, and rolling PCAP evidence persistence.
 - **Active OS Prevention:** Genuine Windows Defender Firewall rule management via PowerShell NetSecurity (`New-NetFirewallRule`), supporting Monitor, Manual, and Automatic containment modes with safe IP exclusions and lease auto-expiration.
 - **Dual Detection Engine:**
