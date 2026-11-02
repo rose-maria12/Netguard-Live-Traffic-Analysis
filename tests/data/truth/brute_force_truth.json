@@ -1,0 +1,12 @@
+{
+  "pcap_filename": "brute_force.pcap",
+  "expected_alerts": [
+    {
+      "alert_type": "brute_force",
+      "src_ip": "192.168.1.101",
+      "dst_ip": "10.0.0.5",
+      "dst_port": 22,
+      "stage": "Access Attempt"
+    }
+  ]
+}

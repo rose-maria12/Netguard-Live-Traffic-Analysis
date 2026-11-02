@@ -1,0 +1,773 @@
+{% extends "base.html" %}
+
+{% block title %}Live Network Monitor — NetGuard{% endblock %}
+{% block topbar_title %}Live Network Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Live Network Monitor</h1>
+        <p class="page-subtitle">Real-time packet capture, bidirectional flow reconstruction, DNS activity monitoring, and sliding-window detection.</p>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+        <span id="capture-status-badge" class="badge {% if worker_status.is_paused %}badge-medium{% elif worker_status.is_running %}badge-success{% else %}badge-muted{% endif %}" style="font-size: 12px; padding: 5px 12px;">
+            {% if worker_status.is_paused %}CAPTURE PAUSED{% elif worker_status.is_running %}CAPTURE ACTIVE{% else %}CAPTURE STOPPED{% endif %}
+        </span>
+    </div>
+</div>
+
+<!-- Capture Control Panel -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Capture Source &amp; Session Controls</h2>
+        <span class="card-badge">Prevention Mode: {{ prevention_config.mode|upper if prevention_config else 'MONITOR' }}</span>
+    </div>
+    <input type="hidden" id="csrf-token" value="{{ csrf_token() }}">
+
+    <div class="grid-2" style="margin-bottom: 16px;">
+        <!-- Live Hardware Capture Mode -->
+        <div style="background: var(--bg-blue-panel); border: 1px solid var(--border-blue-panel); border-radius: var(--radius-sm); padding: 14px 16px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <label for="interface-select" style="font-size: 12.5px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.4px;">1. Live Capture (Network Interface)</label>
+                <span class="badge badge-info" style="background: #ffffff;">Npcap / Live Sniffing</span>
+            </div>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+                Capture live packets directly from a physical Wi-Fi or Ethernet adapter.
+            </p>
+            <select id="interface-select" class="form-control" style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">
+                {% set ns = namespace(selected_assigned=false) %}
+                {% for iface in interfaces %}
+                    {% set is_selected = false %}
+                    {% if not ns.selected_assigned and iface.is_primary %}
+                        {% set is_selected = true %}
+                        {% set ns.selected_assigned = true %}
+                    {% elif not ns.selected_assigned and loop.first %}
+                        {% set is_selected = true %}
+                        {% set ns.selected_assigned = true %}
+                    {% endif %}
+                    <option value="{{ iface.name }}"
+                            data-primary="{{ 'true' if iface.is_primary else 'false' }}"
+                            {% if is_selected %}selected{% endif %}>
+                        {{ iface.iface_type }} &bull; {{ iface.readable_name or iface.description or iface.name }} ({{ iface.ip }}){% if not iface.is_active %} [Disconnected]{% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+            <div style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
+                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;">
+                    <input type="checkbox" id="show-all-interfaces" onchange="toggleAllInterfaces(this.checked)">
+                    <span>Show all interfaces (VPN, virtual, loopback, disconnected)</span>
+                </label>
+                <span id="interface-count-note" style="font-size: 11.5px; color: var(--text-muted);"></span>
+            </div>
+        </div>
+
+        <!-- Sample Offline Replay Mode -->
+        <div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px 16px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <label for="replay-select" style="font-size: 12.5px; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.4px;">2. Sample Replay (Offline Simulation)</label>
+                <span class="badge badge-muted">Firewall Isolated</span>
+            </div>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+                Stream a verified sample PCAP through the live pipeline. Select &ldquo;None&rdquo; to use the live network interface.
+            </p>
+            <select id="replay-select" class="form-control" onchange="updateModeHighlight()">
+                <option value="">None &mdash; Use Live Network Interface</option>
+                <option value="tests/data/pcaps/multi_stage.pcap">Sample Replay: Multi-Stage Incident PCAP</option>
+                <option value="tests/data/pcaps/demo_scenario.pcap">Sample Replay: Full Demo Scenario PCAP</option>
+                <option value="tests/data/pcaps/port_scan.pcap">Sample Replay: Reconnaissance Port Scan</option>
+                <option value="tests/data/pcaps/brute_force.pcap">Sample Replay: SSH/RDP Brute Force</option>
+                <option value="tests/data/pcaps/dns_tunnel.pcap">Sample Replay: DNS Exfiltration Tunnel</option>
+                <option value="tests/data/pcaps/exfiltration.pcap">Sample Replay: Abnormal High-Volume Outbound</option>
+            </select>
+            <div id="replay-mode-note" style="margin-top: 8px; font-size: 11.5px; color: var(--text-muted);">
+                Active source: <strong id="active-source-label" style="color: var(--text-primary);">Live Network Interface</strong> (OS firewall auto-blocking is disabled during Sample Replay).
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Controls Bar -->
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 14px;">
+        <button type="button" id="btn-start-capture" class="btn btn-primary" {% if worker_status.is_running %}disabled{% endif %}>
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Start Capture
+        </button>
+        <button type="button" id="btn-pause-capture" class="btn btn-outline" {% if not worker_status.is_running or worker_status.is_paused %}disabled{% endif %}>
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            Pause
+        </button>
+        <button type="button" id="btn-resume-capture" class="btn btn-outline" {% if not worker_status.is_running or not worker_status.is_paused %}disabled{% endif %}>
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Resume
+        </button>
+        <button type="button" id="btn-stop-capture" class="btn btn-danger" {% if not worker_status.is_running %}disabled{% endif %}>
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>
+            Stop &amp; Save
+        </button>
+
+        <div style="margin-left: auto; font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 12px;">
+            <span id="session-summary" style="display: none; font-weight: 600; color: var(--text-primary);"></span>
+        </div>
+    </div>
+
+    <div id="capture-alert-banner" style="display: none; margin-top: 12px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500;"></div>
+</div>
+
+<!-- Expandable Technical Details -->
+<details class="how-it-works">
+    <summary>How Live Capture, Sample Replay &amp; DNS Activity Work</summary>
+    <div class="how-it-works-body">
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;">
+            <li><strong>Live Capture vs. Sample Replay:</strong> Live Capture sniffs frames from the selected network adapter via Npcap/Scapy and writes a rolling PCAP file in <code>captures/</code>. Sample Replay streams packets from a local test PCAP through the same normalization queue while keeping automatic Windows Firewall blocking disabled.</li>
+            <li><strong>Queue &amp; Pause Semantics:</strong> Packets enter a bounded <code>10,000</code>-packet queue and are evaluated every 20 seconds (and flushed immediately on Stop). While paused, arriving packets are ignored.</li>
+            <li><strong>DNS Activity vs. Website Visits:</strong> DNS Events record UDP/TCP port 53 lookups, mDNS (UDP 5353), and LLMNR (UDP 5355). A DNS lookup indicates name resolution activity (including background OS/browser prefetching) and does not by itself prove an interactive website visit.</li>
+        </ul>
+    </div>
+</details>
+
+<!-- Live Telemetry Counters Grid (8 metrics) -->
+<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));">
+    <div class="stat-card stat-blue">
+        <div class="stat-label">Packets Captured</div>
+        <div id="metric-packets" class="stat-value" style="margin-top: 4px;">{{ worker_status.packets_captured|default(0) }}</div>
+    </div>
+    <div class="stat-card stat-blue">
+        <div class="stat-label">Active Flows</div>
+        <div id="metric-flows" class="stat-value" style="margin-top: 4px;">{{ engine_metrics.active_flows|default(0) }}</div>
+    </div>
+    <div class="stat-card stat-blue">
+        <div class="stat-label">Volume Captured</div>
+        <div id="metric-bytes" class="stat-value" style="margin-top: 4px;">{{ (worker_status.bytes_captured / 1024)|round(1) if worker_status.bytes_captured else 0 }} KB</div>
+    </div>
+    <div class="stat-card stat-blue">
+        <div class="stat-label">Throughput</div>
+        <div id="metric-throughput" class="stat-value" style="margin-top: 4px;">{{ worker_status.throughput_pps|default(0) }} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">pps</span></div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Queue Backlog</div>
+        <div id="metric-backlog" class="stat-value" style="margin-top: 4px;">{{ worker_status.backlog_queue|default(0) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Packets Dropped</div>
+        <div id="metric-dropped" class="stat-value" style="margin-top: 4px; color: var(--color-critical);">{{ worker_status.packets_dropped|default(0) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Live Alerts</div>
+        <div id="metric-alerts" class="stat-value" style="margin-top: 4px; color: var(--color-medium);">{{ engine_metrics.alerts_generated|default(0) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Correlated Incidents</div>
+        <div id="metric-incidents" class="stat-value" style="margin-top: 4px;">{{ engine_metrics.incidents_generated|default(0) }}</div>
+    </div>
+</div>
+
+<!-- Live Detected Alerts Table -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Live Heuristic Alerts</h2>
+        <span class="card-badge">20s Sliding Window</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Timestamp</th>
+                    <th>Rule Name</th>
+                    <th>Severity</th>
+                    <th>Source IP</th>
+                    <th>Destination IP</th>
+                    <th>Wireshark Filter</th>
+                    <th style="text-align: right;">Firewall Action</th>
+                </tr>
+            </thead>
+            <tbody id="live-alerts-tbody">
+                {% if recent_alerts %}
+                    {% for a in recent_alerts %}
+                        <tr>
+                            <td><strong>#{{ a.id }}</strong></td>
+                            <td style="color: var(--text-muted); font-size: 12px;">{{ a.start_ts|round(2) }}</td>
+                            <td><code>{{ a.rule_name }}</code></td>
+                            <td>
+                                <span class="badge badge-{{ a.severity|lower }}">{{ a.severity|upper }}</span>
+                            </td>
+                            <td>
+                                <code>{{ a.src_ip }}</code>
+                                <button type="button" onclick="checkIntel('{{ a.src_ip }}')" class="btn btn-sm btn-outline" style="padding: 1px 6px; font-size: 10.5px; margin-left: 4px;" title="Check IP Reputation">Intel</button>
+                            </td>
+                            <td><code>{{ a.dst_ip or '—' }}</code></td>
+                            <td>
+                                <code style="font-size: 11.5px;">{{ a.wireshark_filter }}</code>
+                            </td>
+                            <td style="text-align: right;">
+                                <button type="button" onclick="manualBlockIp('{{ a.src_ip }}', 'Manual block from live alert #{{ a.id }}', {{ a.id }})" class="btn btn-sm btn-danger">
+                                    Block IP
+                                </button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr id="empty-alerts-row">
+                        <td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">
+                            No live alerts triggered in the current session.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- DNS Activity Card -->
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2 class="card-title">DNS Activity</h2>
+            <p style="color: var(--text-muted); font-size: 12px; margin-top: 2px;">
+                Unicast DNS queries/responses and local service discovery (mDNS / LLMNR). DNS lookups reflect name resolution and do not prove a website was visited.
+            </p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span id="dns-stat-standard" class="badge badge-info">0 DNS Events</span>
+            <span id="dns-stat-mdns" class="badge badge-muted">0 Discovery</span>
+            <span id="dns-stat-total" class="badge badge-muted">0 Total</span>
+            <span id="dns-stream-indicator" style="font-size: 11.5px; color: var(--text-muted);">Ready</span>
+        </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; background: var(--bg-blue-panel); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-blue-panel);">
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Filter:</span>
+            <div class="filter-group">
+                <button type="button" id="dns-filter-dns" onclick="setDnsFilter('dns')" class="filter-pill active">
+                    DNS
+                </button>
+                <button type="button" id="dns-filter-mdns" onclick="setDnsFilter('mdns')" class="filter-pill">
+                    Discovery
+                </button>
+                <button type="button" id="dns-filter-all" onclick="setDnsFilter('all')" class="filter-pill">
+                    All
+                </button>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 300px;">
+            <input type="text" id="dns-search-input" class="form-control" placeholder="Filter by domain or IP..." oninput="setDnsSearch(this.value)" style="padding: 5px 10px; font-size: 12px;">
+        </div>
+    </div>
+
+    <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Protocol</th>
+                    <th>Source IP</th>
+                    <th>Query Name / Answers</th>
+                    <th>Destination IP</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="live-dns-tbody">
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                        No DNS events recorded in current stream.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Live Flow & Packet Telemetry Streams -->
+<div class="card">
+    <div class="card-header">
+        <div>
+            <h2 class="card-title">Reconstructed Bidirectional Flows</h2>
+            <p style="color: var(--text-muted); font-size: 12px; margin-top: 2px;">
+                Live 5-tuple canonical flows grouping forward and reverse packets, byte volume, and TCP state.
+            </p>
+        </div>
+        <span id="flow-stream-indicator" class="card-badge">Recent 15 Flows</span>
+    </div>
+
+    <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Protocol</th>
+                    <th>Initiator (Source IP:Port)</th>
+                    <th>Responder (Destination IP:Port)</th>
+                    <th>Packets (Fwd / Rev)</th>
+                    <th>Total Volume</th>
+                    <th>Connection State</th>
+                </tr>
+            </thead>
+            <tbody id="live-flows-tbody">
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                        Waiting for bidirectional flows...
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom: 0;">
+    <div class="card-header">
+        <div>
+            <h2 class="card-title">Decoded Packet Stream</h2>
+            <p style="color: var(--text-muted); font-size: 12px; margin-top: 2px;">
+                Most recent decoded IPv4 frames with transport ports, byte length, and TCP control flags.
+            </p>
+        </div>
+        <span id="packet-stream-indicator" class="card-badge">Recent 15 Frames</span>
+    </div>
+
+    <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Frame #</th>
+                    <th>Protocol</th>
+                    <th>Source IP:Port</th>
+                    <th>Destination IP:Port</th>
+                    <th>Length</th>
+                    <th>TCP Flags</th>
+                </tr>
+            </thead>
+            <tbody id="live-packets-tbody">
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                        Waiting for packets...
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const csrfToken = document.getElementById('csrf-token').value;
+let wasRunning = false;
+let currentMode = 'live';
+
+// Store all interface options so we can filter primary vs all without losing selection
+const ifaceSelect = document.getElementById('interface-select');
+const allInterfaceOptions = Array.from(ifaceSelect.options).map(opt => ({
+    value: opt.value,
+    text: opt.text,
+    isPrimary: opt.getAttribute('data-primary') === 'true',
+    selected: opt.selected
+}));
+
+function toggleAllInterfaces(showAll) {
+    const currentVal = ifaceSelect.value;
+    const primaryOpts = allInterfaceOptions.filter(o => o.isPrimary);
+    // If no primary adapters exist on this machine, always show all so dropdown is never empty
+    const effectiveShowAll = showAll || primaryOpts.length === 0;
+    const visibleOpts = effectiveShowAll ? allInterfaceOptions : primaryOpts;
+
+    ifaceSelect.innerHTML = '';
+    let matchedSelection = false;
+    visibleOpts.forEach(o => {
+        const optEl = document.createElement('option');
+        optEl.value = o.value;
+        optEl.text = o.text;
+        optEl.setAttribute('data-primary', o.isPrimary ? 'true' : 'false');
+        if (o.value === currentVal) {
+            optEl.selected = true;
+            matchedSelection = true;
+        }
+        ifaceSelect.appendChild(optEl);
+    });
+    if (!matchedSelection && ifaceSelect.options.length > 0) {
+        ifaceSelect.options[0].selected = true;
+    }
+
+    const countNote = document.getElementById('interface-count-note');
+    if (countNote) {
+        const hiddenCount = allInterfaceOptions.length - visibleOpts.length;
+        countNote.innerText = hiddenCount > 0
+            ? `${visibleOpts.length} active physical shown (${hiddenCount} virtual/other hidden)`
+            : `${allInterfaceOptions.length} total interfaces shown`;
+    }
+}
+
+function updateModeHighlight() {
+    const replayVal = document.getElementById('replay-select').value;
+    const labelEl = document.getElementById('active-source-label');
+    if (labelEl) {
+        labelEl.innerText = replayVal ? 'Sample PCAP Replay (Offline Simulation)' : 'Live Network Interface';
+    }
+}
+
+// Initialize interface dropdown filter on load
+toggleAllInterfaces(false);
+
+function showBanner(msg, isError = false) {
+    const banner = document.getElementById('capture-alert-banner');
+    banner.innerText = msg;
+    banner.style.display = 'block';
+    banner.style.background = isError ? 'var(--color-critical-bg)' : 'var(--color-success-bg)';
+    banner.style.color = isError ? 'var(--color-critical)' : 'var(--color-success)';
+    banner.style.border = isError ? '1px solid var(--color-critical-border)' : '1px solid var(--color-success-border)';
+    setTimeout(() => { banner.style.display = 'none'; }, 8000);
+}
+
+// Start Capture
+document.getElementById('btn-start-capture').addEventListener('click', async () => {
+    const iface = document.getElementById('interface-select').value;
+    const replay = document.getElementById('replay-select').value;
+    currentMode = replay ? 'replay' : 'live';
+
+    try {
+        const res = await fetch('/api/capture/start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({ interface: iface, replay_file: replay })
+        });
+        const data = await res.json();
+        if (data.success) {
+            wasRunning = true;
+            document.getElementById('session-summary').style.display = 'none';
+            showBanner(`Started ${replay ? 'sample replay (' + replay + ')' : 'live capture on ' + iface}`);
+            document.getElementById('btn-start-capture').disabled = true;
+            document.getElementById('btn-pause-capture').disabled = false;
+            document.getElementById('btn-resume-capture').disabled = true;
+            document.getElementById('btn-stop-capture').disabled = false;
+        } else {
+            showBanner(data.error || 'Failed to start capture: Check Npcap and Administrator privileges.', true);
+        }
+    } catch (e) {
+        showBanner('Error contacting capture service: ' + (e.message || e), true);
+    }
+});
+
+// Pause Capture
+document.getElementById('btn-pause-capture').addEventListener('click', async () => {
+    try {
+        const res = await fetch('/api/capture/pause', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showBanner('Capture paused. Packets arriving while paused are ignored.');
+            document.getElementById('btn-pause-capture').disabled = true;
+            document.getElementById('btn-resume-capture').disabled = false;
+        }
+    } catch (e) {
+        showBanner('Error pausing capture: ' + (e.message || e), true);
+    }
+});
+
+// Resume Capture
+document.getElementById('btn-resume-capture').addEventListener('click', async () => {
+    try {
+        const res = await fetch('/api/capture/resume', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showBanner('Capture resumed.');
+            document.getElementById('btn-pause-capture').disabled = false;
+            document.getElementById('btn-resume-capture').disabled = true;
+        }
+    } catch (e) {
+        showBanner('Error resuming capture: ' + (e.message || e), true);
+    }
+});
+
+// Stop Capture
+document.getElementById('btn-stop-capture').addEventListener('click', async () => {
+    try {
+        const res = await fetch('/api/capture/stop', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken }
+        });
+        const data = await res.json();
+        if (data.success) {
+            wasRunning = false;
+            const pkts = data.worker ? data.worker.packets_captured : (data.engine ? data.engine.packets_processed : 0);
+            const duration = data.worker && data.worker.duration ? data.worker.duration + 's' : '';
+            showBanner(`Capture stopped cleanly. Recorded ${pkts} packets into SQLite and PCAP storage.`);
+
+            const summarySpan = document.getElementById('session-summary');
+            summarySpan.innerText = `Last Session: ${pkts} pkts (${duration})`;
+            summarySpan.style.display = 'inline';
+
+            document.getElementById('btn-start-capture').disabled = false;
+            document.getElementById('btn-pause-capture').disabled = true;
+            document.getElementById('btn-resume-capture').disabled = true;
+            document.getElementById('btn-stop-capture').disabled = true;
+        } else {
+            showBanner(data.error || 'Failed to stop capture cleanly', true);
+        }
+    } catch (e) {
+        showBanner('Error stopping capture: ' + (e.message || e), true);
+    }
+});
+
+async function manualBlockIp(ip, reason, alertId) {
+    if (!confirm(`Confirm blocking Source IP ${ip} via Windows Defender Firewall?`)) return;
+    try {
+        const res = await fetch('/api/firewall/block', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({ ip: ip, reason: reason, alert_id: alertId, duration_minutes: 15 })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`IP ${ip} blocked under rule ${data.rule_name}.`);
+        } else {
+            alert(`Rejected block for IP ${ip}: ${data.error}`);
+        }
+    } catch (e) {
+        alert('Error communicating with firewall API: ' + e);
+    }
+}
+
+async function checkIntel(ip) {
+    try {
+        const res = await fetch(`/api/intel/lookup/${ip}`);
+        const data = await res.json();
+        const score = data.reputation_score !== null ? `${data.reputation_score}%` : 'N/A';
+        alert(`Threat Intelligence for ${ip}:\n\n` +
+              `Abuse Confidence Score: ${score}\n` +
+              `Total Abuse Reports: ${data.total_reports}\n` +
+              `ISP / Network: ${data.isp}\n` +
+              `Country: ${data.country_code}\n` +
+              `Source: ${data.source}\n` +
+              `Note: ${data.note}`);
+    } catch (e) {
+        alert(`Failed to query intelligence for ${ip}: ${e}`);
+    }
+}
+
+let currentDnsFilter = 'dns';
+let currentDnsSearch = '';
+
+function setDnsFilter(filter) {
+    currentDnsFilter = filter;
+    ['dns', 'mdns', 'all'].forEach(f => {
+        const btn = document.getElementById(`dns-filter-${f}`);
+        if (!btn) return;
+        if (f === filter) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+}
+
+function setDnsSearch(val) {
+    currentDnsSearch = val;
+}
+
+// Polling live telemetry feed every 1.5 seconds (and run immediately on page load)
+async function pollLiveFeed() {
+    try {
+        const dnsParams = new URLSearchParams({
+            dns_proto: currentDnsFilter,
+            dns_search: currentDnsSearch,
+            dns_limit: '100'
+        });
+        const res = await fetch(`/api/capture/live_feed?${dnsParams.toString()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.worker) {
+            document.getElementById('metric-packets').innerText = data.worker.packets_captured || 0;
+            document.getElementById('metric-bytes').innerText = ((data.worker.bytes_captured || 0) / 1024).toFixed(1) + ' KB';
+            document.getElementById('metric-throughput').innerHTML = `${data.worker.throughput_pps || 0} <span style="font-size: 13px; font-weight: 500; color: var(--text-muted);">pps</span>`;
+            document.getElementById('metric-backlog').innerText = data.worker.backlog_queue || 0;
+            document.getElementById('metric-dropped').innerText = data.worker.packets_dropped || 0;
+        }
+        const eng = data.engine || data.metrics;
+        if (eng) {
+            document.getElementById('metric-alerts').innerText = eng.alerts_generated || 0;
+            document.getElementById('metric-incidents').innerText = eng.incidents_generated || 0;
+            const flEl = document.getElementById('metric-flows');
+            if (flEl) flEl.innerText = eng.active_flows || (data.flows ? data.flows.length : 0);
+        }
+
+        const badge = document.getElementById('capture-status-badge');
+        if (data.is_paused) {
+            badge.innerText = 'CAPTURE PAUSED';
+            badge.className = 'badge badge-medium';
+            document.getElementById('btn-start-capture').disabled = true;
+            document.getElementById('btn-pause-capture').disabled = true;
+            document.getElementById('btn-resume-capture').disabled = false;
+            document.getElementById('btn-stop-capture').disabled = false;
+        } else if (data.is_running) {
+            badge.innerText = data.worker && data.worker.is_replay ? 'REPLAY ACTIVE' : 'CAPTURE ACTIVE';
+            badge.className = 'badge badge-success';
+            document.getElementById('btn-start-capture').disabled = true;
+            document.getElementById('btn-pause-capture').disabled = false;
+            document.getElementById('btn-resume-capture').disabled = true;
+            document.getElementById('btn-stop-capture').disabled = false;
+        } else {
+            if (data.is_completed || (wasRunning && currentMode === 'replay')) {
+                badge.innerText = 'REPLAY COMPLETED';
+                badge.className = 'badge badge-info';
+                const pkts = data.worker ? data.worker.packets_captured : 0;
+                const summarySpan = document.getElementById('session-summary');
+                summarySpan.innerText = `Replay Completed: ${pkts} pkts processed`;
+                summarySpan.style.display = 'inline';
+            } else {
+                badge.innerText = 'CAPTURE STOPPED';
+                badge.className = 'badge badge-muted';
+            }
+            document.getElementById('btn-start-capture').disabled = false;
+            document.getElementById('btn-pause-capture').disabled = true;
+            document.getElementById('btn-resume-capture').disabled = true;
+            document.getElementById('btn-stop-capture').disabled = true;
+        }
+
+        // Render live flows table
+        if (data.flows && data.flows.length > 0) {
+            const ftbody = document.getElementById('live-flows-tbody');
+            if (ftbody) {
+                ftbody.innerHTML = data.flows.slice(0, 15).map(f => `
+                    <tr>
+                        <td><span class="badge badge-info">${f.proto}</span></td>
+                        <td><code>${f.initiator_ip || f.ip_src}${f.initiator_port ? ':' + f.initiator_port : ''}</code></td>
+                        <td><code>${f.responder_ip || f.ip_dst}${f.responder_port ? ':' + f.responder_port : ''}</code></td>
+                        <td><strong>${f.pkts_fwd || 0}</strong> / ${f.pkts_rev || 0}</td>
+                        <td>${f.bytes_total || ((f.bytes_fwd || 0) + (f.bytes_rev || 0))} B</td>
+                        <td><span class="badge badge-muted">${f.state || 'other'}</span></td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        // Render live packets table
+        if (data.packets && data.packets.length > 0) {
+            const tbody = document.getElementById('live-packets-tbody');
+            tbody.innerHTML = data.packets.slice(0, 15).map(p => `
+                <tr>
+                    <td style="color: var(--text-muted); font-family: monospace;">#${p.frame_no}</td>
+                    <td><span class="badge badge-info">${p.proto}</span></td>
+                    <td><code>${p.ip_src}${p.sport ? ':' + p.sport : ''}</code></td>
+                    <td><code>${p.ip_dst}${p.dport ? ':' + p.dport : ''}</code></td>
+                    <td>${p.length} B</td>
+                    <td style="color: var(--text-muted); font-family: monospace;">${p.flags || '—'}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Render DNS Event counters & table
+        if (data.dns_stats) {
+            const elStd = document.getElementById('dns-stat-standard');
+            const elMdns = document.getElementById('dns-stat-mdns');
+            const elTot = document.getElementById('dns-stat-total');
+            const discoveryCount = (data.dns_stats.mdns || 0) + (data.dns_stats.llmnr || 0);
+            if (elStd) elStd.innerText = `${data.dns_stats.standard || 0} DNS Events`;
+            if (elMdns) elMdns.innerText = `${discoveryCount} Discovery`;
+            if (elTot) elTot.innerText = `${data.dns_stats.total || 0} Total`;
+        }
+
+        const dnsTbody = document.getElementById('live-dns-tbody');
+        if (dnsTbody) {
+            if (data.dns_events && data.dns_events.length > 0) {
+                dnsTbody.innerHTML = data.dns_events.slice(0, 50).map(d => {
+                    const isQuery = d.is_response === 0 || d.is_response === false;
+                    const isNx = d.rcode === 3;
+                    const hasAnswers = d.answers && d.answers.length > 0;
+                    let statusBadge = '';
+                    if (isQuery) {
+                        statusBadge = '<span class="badge badge-info">QUERY</span>';
+                    } else if (isNx) {
+                        statusBadge = '<span class="badge badge-critical">NXDOMAIN</span>';
+                    } else if (d.rcode === 0 && hasAnswers) {
+                        statusBadge = '<span class="badge badge-success">RESOLVED</span>';
+                    } else if (d.rcode === 0) {
+                        statusBadge = '<span class="badge badge-muted">NOERROR</span>';
+                    } else {
+                        statusBadge = `<span class="badge badge-medium">RCODE ${d.rcode}</span>`;
+                    }
+                    const timeStr = typeof d.ts === 'number' ? new Date(d.ts * 1000).toLocaleTimeString() : '—';
+                    const isMdns = d.proto_type === 'mDNS' || d.server_ip === '224.0.0.251';
+                    const isLlmnr = d.proto_type === 'LLMNR' || d.server_ip === '224.0.0.252';
+                    const typeBadge = isMdns
+                        ? '<span class="badge badge-muted">mDNS</span>'
+                        : (isLlmnr
+                            ? '<span class="badge badge-muted">LLMNR</span>'
+                            : '<span class="badge badge-info">DNS</span>');
+
+                    const answersText = (d.answers && d.answers.length > 0)
+                        ? `<div style="font-size: 11px; color: var(--color-success); margin-top: 2px; font-family: monospace;">&rarr; ${d.answers.slice(0, 3).join(', ')}${d.answers.length > 3 ? '...' : ''}</div>`
+                        : '';
+
+                    return `
+                        <tr>
+                            <td style="color: var(--text-muted); font-size: 12px;">${timeStr}</td>
+                            <td>${typeBadge}</td>
+                            <td><code>${d.client_ip || '—'}</code></td>
+                            <td>
+                                <code style="font-weight: 600;">${d.qname || '—'}</code>
+                                ${answersText}
+                            </td>
+                            <td><code>${d.server_ip || '—'}${d.dst_port ? ':' + d.dst_port : ''}</code></td>
+                            <td>${statusBadge}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                const filterLabel = currentDnsFilter === 'mdns' ? 'Discovery' : (currentDnsFilter === 'dns' ? 'DNS' : 'All');
+                dnsTbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 18px; color: var(--text-muted);">
+                            No DNS events matching filter "${filterLabel}".
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Dynamically update Live Alerts table
+        if (data.alerts && data.alerts.length > 0) {
+            const alertTbody = document.getElementById('live-alerts-tbody');
+            const emptyRow = document.getElementById('empty-alerts-row');
+            if (emptyRow) emptyRow.remove();
+
+            alertTbody.innerHTML = data.alerts.map(a => `
+                <tr>
+                    <td><strong>#${a.id}</strong></td>
+                    <td style="color: var(--text-muted); font-size: 12px;">${typeof a.start_ts === 'number' ? a.start_ts.toFixed(2) : a.start_ts}</td>
+                    <td><code>${a.rule_name}</code></td>
+                    <td>
+                        <span class="badge badge-${(a.severity || 'info').toLowerCase()}">${(a.severity || 'info').toUpperCase()}</span>
+                    </td>
+                    <td>
+                        <code>${a.src_ip}</code>
+                        <button type="button" onclick="checkIntel('${a.src_ip}')" class="btn btn-sm btn-outline" style="padding: 1px 6px; font-size: 10.5px; margin-left: 4px;" title="Check IP Reputation">Intel</button>
+                    </td>
+                    <td><code>${a.dst_ip || '—'}</code></td>
+                    <td>
+                        <code style="font-size: 11.5px;">${(a.details && a.details.wireshark_filter) || a.wireshark_filter || 'ip.addr == ' + a.src_ip}</code>
+                    </td>
+                    <td style="text-align: right;">
+                        <button type="button" onclick="manualBlockIp('${a.src_ip}', 'Manual block from live alert #${a.id}', ${a.id})" class="btn btn-sm btn-danger">
+                            Block IP
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+    } catch (e) {
+        // ignore poll errors
+    }
+}
+pollLiveFeed();
+setInterval(pollLiveFeed, 1500);
+</script>
+{% endblock %}

@@ -1,0 +1,49 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Caches & Test Artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Runtime Databases & Temporary State
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/*.db
+data/backups/
+data/captures/
+data/uploads/
+data/cicids2017/
+tests/data/*.db
+tests/data/eval_tmp/
+bad_link.pcap
+
+# Track Models & Pre-trained Joblib weights
+!data/models/
+!data/models/**
+
+# Track Sample PCAPs and Fixtures
+!tests/data/pcaps/
+!tests/data/pcaps/*.pcap
+!tests/data/truth/
+!tests/data/truth/*.json
+!tests/data/datasets/
+!tests/data/datasets/*.csv

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Incident #{{ incident.id }} Detail — NetGuard{% endblock %}
+{% block topbar_title %}Incident #{{ incident.id }} Investigation{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Incident #{{ incident.id }} Detail</h1>
+        <p class="page-subtitle">Primary Source IP: <code>{{ incident.primary_ip }}</code> &bull; Involved Hosts: <code>{{ incident.involved_ips | join(', ') }}</code></p>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="badge badge-{{ incident.level|lower }}" style="font-size: 13px; padding: 6px 12px;">
+            Score: {{ "%.1f"|format(incident.score) }} / 100 ({{ incident.level|upper }})
+        </span>
+        <a href="{{ url_for('report_html', run_id=incident.run_id) }}" target="_blank" class="btn btn-outline">Export HTML Report</a>
+        <a href="{{ url_for('report_json', run_id=incident.run_id) }}" target="_blank" class="btn btn-outline">Export JSON</a>
+    </div>
+</div>
+
+<div class="disclaimer-banner">
+    <strong>Prioritization Score Note:</strong> Incident score ({{ "%.1f"|format(incident.score) }}/100) is a heuristic prioritization score based on alert severity, stage diversity, chronological progression, and corroboration. It is not a statistical probability and requires analyst verification of the underlying packet evidence.
+</div>
+
+<!-- Score Breakdown Table -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Score Breakdown</h2>
+        <span class="card-badge">0&ndash;100 Heuristic Formula</span>
+    </div>
+    {% set bd = incident.score_breakdown %}
+    {% set w = bd.get('weights', {}) %}
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Description</th>
+                    <th>Observed Score</th>
+                    <th>Max Weight</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Strongest Alert Severity</strong></td>
+                    <td>Highest severity multiplier present across linked findings</td>
+                    <td>{{ bd.get('strongest_alert_score', 0) }} pts</td>
+                    <td>{{ w.get('strongest_alert', 35.0) }} pts</td>
+                </tr>
+                <tr>
+                    <td><strong>Stage Diversity</strong></td>
+                    <td>Distinct kill-chain stages observed in correlation group</td>
+                    <td>{{ bd.get('stage_diversity_score', 0) }} pts</td>
+                    <td>{{ w.get('stage_diversity', 30.0) }} pts</td>
+                </tr>
+                <tr>
+                    <td><strong>Logical Order Progression</strong></td>
+                    <td>Chronological progression across canonical kill-chain stages</td>
+                    <td>{{ bd.get('logical_order_score', 0) }} pts</td>
+                    <td>{{ w.get('stage_order', 15.0) }} pts</td>
+                </tr>
+                <tr>
+                    <td><strong>Corroboration</strong></td>
+                    <td>Presence of ML anomaly or abnormal outbound indicators</td>
+                    <td>{{ bd.get('corroboration_score', 0) }} pts</td>
+                    <td>{{ w.get('corroboration', 20.0) }} pts</td>
+                </tr>
+                <tr style="background: var(--bg-subtle);">
+                    <td colspan="2"><strong>Total Heuristic Prioritization Score</strong></td>
+                    <td><strong style="color: var(--primary); font-size: 15px;">{{ "%.1f"|format(incident.score) }} / 100.0</strong></td>
+                    <td><strong>100.0 pts</strong></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Chronological Attack Timeline -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Chronological Stage Timeline</h2>
+        <span class="card-badge">{{ timeline|length }} stage(s)</span>
+    </div>
+    {% if not timeline %}
+        <p style="color: var(--text-muted); font-size: 13px;">No stages recorded.</p>
+    {% else %}
+        <div class="timeline">
+            {% for node in timeline %}
+                <div class="timeline-item">
+                    <div class="timeline-stage">{{ node.stage }}</div>
+                    {% for a in node.alerts %}
+                        <div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <div>
+                                    <strong>{{ a.alert_type }}</strong> &bull; <span style="color: var(--text-secondary);">{{ a.detector }} (<code>{{ a.rule_name }}</code>)</span>
+                                </div>
+                                <span class="badge badge-{{ a.severity|lower }}">{{ a.severity }}</span>
+                            </div>
+                            <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 8px 0;">{{ a.summary }}</p>
+                            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">
+                                <strong>Window Frame Span:</strong> #{{ a.first_frame }}&ndash;#{{ a.last_frame }}
+                                {% if a.trigger_frames %}
+                                &bull; <strong>Trigger Frames ({{ a.trigger_frames|length }}):</strong> <code>{{ a.trigger_frames[:10]|join(', ') }}{% if a.trigger_frames|length > 10 %}&hellip;{% endif %}</code>
+                                {% endif %}
+                            </div>
+                            <div class="filter-box" style="margin-bottom: 6px;">
+                                <code>{{ a.wireshark_filter }}</code>
+                                <button onclick="copyToClipboard('{{ a.wireshark_filter }}', this)" class="btn btn-sm btn-outline">Copy Trigger Filter</button>
+                            </div>
+                            {% if a.wireshark_bi_filter %}
+                            <div class="filter-box">
+                                <code>{{ a.wireshark_bi_filter }}</code>
+                                <button onclick="copyToClipboard('{{ a.wireshark_bi_filter }}', this)" class="btn btn-sm btn-outline">Copy Bidirectional Filter</button>
+                            </div>
+                            {% endif %}
+                            {% if a.suggested_precautions or (a.details and a.details.get('suggested_precautions')) %}
+                            <div style="margin-top: 8px; padding: 7px 10px; background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--primary); border-radius: var(--radius-sm); font-size: 12px;">
+                                <strong style="color: var(--primary);">Suggested Precautions / Next Steps:</strong>
+                                <span style="color: var(--text-primary); margin-left: 4px;">{{ a.suggested_precautions or a.details.get('suggested_precautions') }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+
+<!-- Related Alerts List -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Linked Alerts &amp; Evidence References</h2>
+        <span class="card-badge">{{ alerts|length }} linked</span>
+    </div>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Alert ID</th>
+                    <th>Role</th>
+                    <th>Type</th>
+                    <th>Source IP</th>
+                    <th>Destination IP</th>
+                    <th>First Frame</th>
+                    <th>Last Frame</th>
+                    <th>Evidence Link</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in alerts %}
+                <tr>
+                    <td><strong>#{{ a.id }}</strong></td>
+                    <td><span class="badge badge-info">{{ a.role }}</span></td>
+                    <td>{{ a.alert_type }}</td>
+                    <td><code>{{ a.src_ip }}</code></td>
+                    <td><code>{{ a.dst_ip if a.dst_ip else '—' }}</code></td>
+                    <td>Frame #{{ a.first_frame }}</td>
+                    <td>Frame #{{ a.last_frame }}</td>
+                    <td><a href="{{ url_for('evidence', alert_id=a.id) }}" class="btn btn-sm btn-outline">View Evidence</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+{
+  "pcap_filename": "port_scan.pcap",
+  "expected_alerts": [
+    {
+      "alert_type": "port_scan",
+      "src_ip": "192.168.1.100",
+      "dst_ip": "10.0.0.5",
+      "dst_port": null,
+      "stage": "Reconnaissance"
+    }
+  ]
+}

@@ -1,0 +1,377 @@
+{% extends "base.html" %}
+
+{% block title %}Firewall & Prevention — NetGuard{% endblock %}
+{% block topbar_title %}Firewall & Prevention Management{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Windows Defender Firewall Integration &amp; Intrusion Prevention</h1>
+        <p class="page-subtitle">Audited, temporary inbound IP block management via Windows Defender Firewall. Supports Monitor Only, Manual Enforce, and Automated Prevention modes.</p>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+        <span class="badge {% if fw_status.enabled %}badge-success{% else %}badge-critical{% endif %}" style="font-size: 12px; padding: 5px 10px;">
+            {% if fw_status.enabled %}DEFENDER FIREWALL ACTIVE{% else %}DEFENDER FIREWALL INACTIVE{% endif %}
+        </span>
+        <span class="badge {% if prevention_config.mode == 'auto' %}badge-critical{% elif prevention_config.mode == 'manual' %}badge-medium{% else %}badge-info{% endif %}" style="font-size: 12px; padding: 5px 10px;">
+            MODE: {{ prevention_config.mode|upper }}
+        </span>
+    </div>
+</div>
+
+<input type="hidden" id="csrf-token" value="{{ csrf_token() }}">
+
+<!-- Expandable Scope & Safety Policy -->
+<details class="how-it-works">
+    <summary>How Windows Defender Firewall Enforcement &amp; Host Protection Work</summary>
+    <div class="how-it-works-body">
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;">
+            <li><strong>Inbound Host Firewall Scope:</strong> Rules are created on the local Windows Defender Firewall using <code>New-NetFirewallRule -DisplayName "NetGuard-Block-&lt;IP&gt;-&lt;TS&gt;" -Direction Inbound -Action Block -RemoteAddress "&lt;IP&gt;"</code>.</li>
+            <li><strong>Self-Lockout &amp; Infrastructure Protection:</strong> Loopback (<code>127.0.0.0/8</code>), link-local (<code>169.254.0.0/16</code>), multicast, unspecified, all local host adapter IPs, and configured gateways/DNS resolvers are automatically rejected before OS execution.</li>
+            <li><strong>Offline &amp; Replay Isolation:</strong> Uploaded PCAP files and Sample Replay sessions are strictly isolated from automated firewall containment; only live interface captures in <code>auto</code> mode or explicit analyst actions can create firewall blocks.</li>
+        </ul>
+    </div>
+</details>
+
+<!-- Grid: Configuration & Manual Block -->
+<div class="grid-2" style="grid-template-columns: 1.5fr 1fr;">
+
+    <!-- Card 1: Prevention Mode & Policies -->
+    <div class="card" style="margin-bottom: 0;">
+        <div class="card-header">
+            <h2 class="card-title">Prevention Policy Configuration</h2>
+            <span class="card-badge">Active Mode: {{ prevention_config.mode|upper }}</span>
+        </div>
+        <form id="prevention-config-form">
+            <div style="margin-bottom: 16px;">
+                <label class="form-label">Operational Mode</label>
+                <div class="mode-grid">
+                    <label class="mode-card {% if prevention_config.mode == 'monitor' %}active-monitor{% endif %}">
+                        <div style="display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--text-primary); font-size: 13px;">
+                            <input type="radio" name="mode" value="monitor" {% if prevention_config.mode == 'monitor' %}checked{% endif %}>
+                            <span>Monitor Only</span>
+                        </div>
+                        <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;">Detect and log alerts only; no automatic OS firewall blocks.</div>
+                    </label>
+                    <label class="mode-card {% if prevention_config.mode == 'manual' %}active-DryRun{% endif %}">
+                        <div style="display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--text-primary); font-size: 13px;">
+                            <input type="radio" name="mode" value="manual" {% if prevention_config.mode == 'manual' %}checked{% endif %}>
+                            <span>Manual Enforce</span>
+                        </div>
+                        <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;">Analyst-initiated blocks only; no automatic background blocks.</div>
+                    </label>
+                    <label class="mode-card {% if prevention_config.mode == 'auto' %}active-auto{% endif %}">
+                        <div style="display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--text-primary); font-size: 13px;">
+                            <input type="radio" name="mode" value="auto" {% if prevention_config.mode == 'auto' %}checked{% endif %}>
+                            <span>Automated Prevention</span>
+                        </div>
+                        <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;">Auto-block live capture sources meeting minimum severity.</div>
+                    </label>
+                </div>
+            </div>
+
+            <div class="grid-2" style="gap: 12px; margin-bottom: 16px; background: var(--bg-blue-panel); border: 1px solid var(--border-blue-panel); border-radius: var(--radius-sm); padding: 12px 14px;">
+                <div>
+                    <label for="cfg-severity" class="form-label">Auto-Block Min Severity</label>
+                    <select id="cfg-severity" class="form-control">
+                        <option value="high" {% if prevention_config.auto_block_min_severity == 'high' %}selected{% endif %}>High &amp; Critical (Recommended)</option>
+                        <option value="critical" {% if prevention_config.auto_block_min_severity == 'critical' %}selected{% endif %}>Critical Only</option>
+                        <option value="medium" {% if prevention_config.auto_block_min_severity == 'medium' %}selected{% endif %}>Medium, High &amp; Critical</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="cfg-duration" class="form-label">Default Block Duration (Minutes)</label>
+                    <input type="number" id="cfg-duration" class="form-control" value="{{ prevention_config.default_duration_minutes|default(15) }}" min="1" max="1440">
+                </div>
+                <div>
+                    <label for="cfg-max-concurrent" class="form-label">Max Concurrent Active Blocks</label>
+                    <input type="number" id="cfg-max-concurrent" class="form-control" value="{{ prevention_config.max_concurrent_blocks|default(20) }}" min="1" max="100">
+                </div>
+                <div>
+                    <label for="cfg-rate-limit" class="form-label">Hourly Block Rate Limit</label>
+                    <input type="number" id="cfg-rate-limit" class="form-control" value="{{ prevention_config.rate_limit_per_hour|default(10) }}" min="1" max="100">
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end;">
+                <button type="button" id="btn-save-config" class="btn btn-primary">
+                    Save Prevention Policy
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Card 2: Manual Block & Recovery Actions -->
+    <div class="card" style="margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+            <div class="card-header">
+                <h2 class="card-title">Manual IP Block &amp; Recovery</h2>
+                <span class="card-badge">Host Inbound</span>
+            </div>
+            <form id="manual-block-form">
+                <div style="margin-bottom: 12px;">
+                    <label for="manual-block-ip" class="form-label">Target IP Address</label>
+                    <input type="text" id="manual-block-ip" class="form-control" placeholder="e.g. 198.51.100.45" required style="font-family: 'JetBrains Mono', monospace;">
+                </div>
+                <div class="grid-2" style="gap: 10px; margin-bottom: 14px;">
+                    <div>
+                        <label for="manual-block-duration" class="form-label">Duration (Minutes)</label>
+                        <input type="number" id="manual-block-duration" class="form-control" value="15" min="1" max="1440">
+                    </div>
+                    <div>
+                        <label for="manual-block-reason" class="form-label">Reason</label>
+                        <input type="text" id="manual-block-reason" class="form-control" placeholder="Manual block" value="Analyst inspection">
+                    </div>
+                </div>
+                <button type="button" id="btn-manual-block" class="btn btn-danger" style="width: 100%;">
+                    Enforce Inbound Firewall Block
+                </button>
+            </form>
+        </div>
+
+        <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-subtle); display: flex; gap: 10px;">
+            <button type="button" id="btn-reconcile" class="btn btn-outline" style="flex: 1;">
+                Sync with OS Rules
+            </button>
+            <button type="button" id="btn-emergency-purge" class="btn btn-danger" style="flex: 1;">
+                Emergency Purge All
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Managed Blocks Table -->
+<div class="card" style="margin-top: 18px;">
+    <div class="card-header">
+        <h2 class="card-title">NetGuard Managed Firewall Rules</h2>
+        <span class="card-badge">{{ rules|length }} recorded ({{ rules|selectattr('status', 'equalto', 'active')|list|length }} active)</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Blocked IP</th>
+                    <th>Status</th>
+                    <th>Reason</th>
+                    <th>Duration</th>
+                    <th>Expires At</th>
+                    <th>Rule Name</th>
+                    <th style="text-align: right;">Unblock Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if rules %}
+                    {% for r in rules %}
+                        <tr>
+                            <td><code>{{ r.ip_address }}</code></td>
+                            <td>
+                                <span class="badge {% if r.status == 'active' %}badge-critical{% elif r.status == 'removed' %}badge-success{% else %}badge-muted{% endif %}">
+                                    {{ r.status|upper }}
+                                </span>
+                            </td>
+                            <td style="color: var(--text-secondary);">{{ r.reason }}</td>
+                            <td>{{ r.duration_minutes }} min</td>
+                            <td style="color: var(--text-muted); font-size: 12px;" {% if r.expires_at %}data-ts="{{ r.expires_at }}"{% endif %}>
+                                {{ r.expires_at|round(1) if r.expires_at else 'Never' }}
+                            </td>
+                            <td><code style="font-size: 11.5px;">{{ r.rule_name }}</code></td>
+                            <td style="text-align: right;">
+                                {% if r.status == 'active' %}
+                                    <button type="button" onclick="unblockRule('{{ r.rule_name }}')" class="btn btn-sm btn-outline">
+                                        Unblock IP
+                                    </button>
+                                {% else %}
+                                    <span style="color: var(--text-muted); font-size: 12px;">Inactive</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" style="padding: 24px; text-align: center; color: var(--text-muted);">
+                            No firewall blocks currently recorded.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Firewall Audit Log Table -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Firewall Audit Log &amp; Provenance</h2>
+        <span class="card-badge">Immutable Audit Trail</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Action</th>
+                    <th>IP Address</th>
+                    <th>Operator</th>
+                    <th>Result</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if audit_logs %}
+                    {% for l in audit_logs %}
+                        <tr>
+                            <td style="color: var(--text-muted); font-size: 12px;" data-ts="{{ l.ts }}">{{ l.ts|round(1) }}</td>
+                            <td><strong>{{ l.action|upper }}</strong></td>
+                            <td><code>{{ l.ip_address or '—' }}</code></td>
+                            <td style="color: var(--text-secondary);">{{ l.operator }}</td>
+                            <td>
+                                <span class="badge {% if l.result == 'success' %}badge-success{% elif l.result == 'rejected' %}badge-medium{% else %}badge-critical{% endif %}">
+                                    {{ l.result|upper }}
+                                </span>
+                            </td>
+                            <td style="color: var(--text-secondary); font-size: 12px;">{{ l.detail }}</td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="6" style="padding: 20px; text-align: center; color: var(--text-muted);">
+                            No audit log events recorded yet.
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const csrfToken = document.getElementById('csrf-token').value;
+
+document.getElementById('btn-save-config').addEventListener('click', async () => {
+    const selectedMode = document.querySelector('input[name="mode"]:checked').value;
+    const severity = document.getElementById('cfg-severity').value;
+    const duration = document.getElementById('cfg-duration').value;
+    const maxBlocks = document.getElementById('cfg-max-concurrent').value;
+    const rateLimit = document.getElementById('cfg-rate-limit').value;
+
+    try {
+        const res = await fetch('/api/firewall/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({
+                mode: selectedMode,
+                auto_block_min_severity: severity,
+                default_duration_minutes: duration,
+                max_concurrent_blocks: maxBlocks,
+                rate_limit_per_hour: rateLimit
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('Prevention configuration updated successfully.');
+            window.location.reload();
+        } else {
+            alert('Failed to update configuration: ' + data.error);
+        }
+    } catch (e) {
+        alert('Communication error: ' + e);
+    }
+});
+
+document.getElementById('btn-manual-block').addEventListener('click', async () => {
+    const ip = document.getElementById('manual-block-ip').value.trim();
+    const duration = document.getElementById('manual-block-duration').value;
+    const reason = document.getElementById('manual-block-reason').value.trim();
+
+    if (!ip) {
+        alert('Please enter an IP address.');
+        return;
+    }
+
+    if (!confirm(`Confirm blocking inbound traffic from ${ip} for ${duration} minutes?`)) return;
+
+    try {
+        const res = await fetch('/api/firewall/block', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({ ip: ip, duration_minutes: duration, reason: reason })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`IP ${ip} blocked under rule: ${data.rule_name}`);
+            window.location.reload();
+        } else {
+            alert(`Rejected block request: ${data.error}`);
+        }
+    } catch (e) {
+        alert('Communication error: ' + e);
+    }
+});
+
+async function unblockRule(ruleName) {
+    if (!confirm(`Confirm removal of firewall rule: ${ruleName}?`)) return;
+
+    try {
+        const res = await fetch('/api/firewall/unblock', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({ rule_name: ruleName })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('Firewall rule removed.');
+            window.location.reload();
+        } else {
+            alert('Failed to remove rule: ' + data.error);
+        }
+    } catch (e) {
+        alert('Communication error: ' + e);
+    }
+}
+
+document.getElementById('btn-reconcile').addEventListener('click', async () => {
+    try {
+        const res = await fetch('/api/firewall/reconcile', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken }
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(`Reconciliation complete. ${data.reconcile.missing_synced.length} stale rules synchronized.`);
+            window.location.reload();
+        }
+    } catch (e) {
+        alert('Error: ' + e);
+    }
+});
+
+document.getElementById('btn-emergency-purge').addEventListener('click', async () => {
+    if (!confirm('EMERGENCY ACTION: Remove ALL NetGuard-managed firewall rules from Windows Defender Firewall?')) return;
+
+    try {
+        const res = await fetch('/api/firewall/emergency_unblock_all', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken }
+        });
+        const data = await res.json();
+        alert(data.message || 'Purge command executed.');
+        window.location.reload();
+    } catch (e) {
+        alert('Error: ' + e);
+    }
+});
+</script>
+{% endblock %}

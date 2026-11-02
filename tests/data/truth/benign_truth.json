@@ -1,0 +1,4 @@
+{
+  "pcap_filename": "benign.pcap",
+  "expected_alerts": []
+}

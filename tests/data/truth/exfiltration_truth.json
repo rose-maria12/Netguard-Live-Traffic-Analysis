@@ -1,0 +1,12 @@
+{
+  "pcap_filename": "exfiltration.pcap",
+  "expected_alerts": [
+    {
+      "alert_type": "abnormal_outbound",
+      "src_ip": "192.168.1.103",
+      "dst_ip": "203.0.113.50",
+      "dst_port": 8443,
+      "stage": "Possible Exfiltration"
+    }
+  ]
+}

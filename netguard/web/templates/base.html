@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="NetGuard — Network Intrusion Detection & Forensic Correlation Console">
+    <title>{% block title %}NetGuard — Network Security & Forensics{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Dark Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                </div>
+                <div class="sidebar-brand-text">
+                    <span class="sidebar-brand-name">NetGuard</span>
+                    <span class="sidebar-brand-sub">IDS &amp; Forensics</span>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section-label">Operations</div>
+                <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/live" class="nav-item {% if request.endpoint == 'live_monitor' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+                    <span>Live Monitor</span>
+                </a>
+                <a href="/firewall" class="nav-item {% if request.endpoint == 'firewall_view' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+                    <span>Firewall &amp; Prevention</span>
+                </a>
+                <a href="{{ url_for('upload') }}" class="nav-item {% if request.endpoint == 'upload' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <span>Upload &amp; Analyze</span>
+                </a>
+
+                <div class="nav-section-label">Telemetry &amp; Detectors</div>
+                <a href="/traffic_forensics" class="nav-item {% if request.endpoint == 'traffic_forensics' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <span>Traffic Forensics</span>
+                </a>
+                <a href="/detection/port_scan" class="nav-item {% if request.endpoint == 'detect_port_scan' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <span>Port Scan</span>
+                </a>
+                <a href="/detection/brute_force" class="nav-item {% if request.endpoint == 'detect_brute_force' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                    <span>Brute Force</span>
+                </a>
+                <a href="/detection/dns_anomaly" class="nav-item {% if request.endpoint == 'detect_dns_anomaly' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+                    <span>DNS Anomaly</span>
+                </a>
+                <a href="/detection/outbound" class="nav-item {% if request.endpoint == 'detect_outbound' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><path d="M21 3l-7 7"/><path d="M21 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h6"/></svg>
+                    <span>Outbound Traffic</span>
+                </a>
+                <a href="/detection/ml" class="nav-item {% if request.endpoint == 'detect_anomaly_ml' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+                    <span>Isolation Forest ML</span>
+                </a>
+
+                <div class="nav-section-label">Incidents &amp; Validation</div>
+                <a href="{{ url_for('alerts') }}" class="nav-item {% if request.endpoint == 'alerts' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>Alerts Queue</span>
+                </a>
+                <a href="{{ url_for('incidents') }}" class="nav-item {% if request.endpoint == 'incidents' or request.endpoint == 'incident_detail' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    <span>Correlated Incidents</span>
+                </a>
+                <a href="{{ url_for('evidence') }}" class="nav-item {% if request.endpoint == 'evidence' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                    <span>Forensic Evidence</span>
+                </a>
+                <a href="/evaluation" class="nav-item {% if request.endpoint == 'evaluation' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    <span>Evaluation &amp; Benchmarks</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <span class="status-dot"></span>NetGuard v1.1 &bull; SQLite WAL
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="topbar-title">
+                    {% block topbar_title %}Dashboard{% endblock %}
+                </div>
+                <div class="topbar-actions">
+                    {% if analysis_ctx and analysis_ctx.all_captures %}
+                    <div class="scope-selector-group">
+                        <label for="global-capture-selector" class="scope-selector-label">Capture Scope</label>
+                        <select id="global-capture-selector" onchange="switchCaptureScope(this.value)" class="scope-selector-select">
+                            <option value="all" {% if analysis_ctx.is_all_captures %}selected{% endif %}>All Captures (Aggregated)</option>
+                            {% for cap in analysis_ctx.all_captures %}
+                                <option value="{{ cap.id }}" {% if not analysis_ctx.is_all_captures and analysis_ctx.capture_id == cap.id %}selected{% endif %}>
+                                    #{{ cap.id }}: {{ cap.filename }} ({{ cap.source }})
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    <a href="{{ url_for('upload') }}" class="btn btn-sm btn-outline">Upload PCAP</a>
+                </div>
+            </header>
+
+            {% if analysis_ctx and not analysis_ctx.is_all_captures and analysis_ctx.selected_capture %}
+            <div style="background: var(--bg-blue-panel); border-bottom: 1px solid var(--border-blue-panel); padding: 8px 28px; display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--text-secondary); flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                    <span style="font-weight: 700; color: #1e3a8a; text-transform: uppercase; font-size: 11px; letter-spacing: 0.4px;">Scoped Session:</span>
+                    <span><strong>File:</strong> <code>{{ analysis_ctx.selected_capture.filename }}</code></span>
+                    <span><strong>Capture:</strong> #{{ analysis_ctx.selected_capture.id }}</span>
+                    <span><strong>Run:</strong> #{{ analysis_ctx.run_id or 'N/A' }}</span>
+                    <span><strong>Source:</strong> <span class="badge badge-muted">{{ analysis_ctx.selected_capture.source|upper }}</span></span>
+                    <span><strong>Packets:</strong> {{ analysis_ctx.selected_capture.packets_stored or analysis_ctx.selected_capture.frames_total or 0 }}</span>
+                    <span title="Indicates PCAP decoding succeeded, not whether traffic is benign.">
+                        <strong>Status:</strong>
+                        <span class="badge {% if analysis_ctx.selected_capture.status == 'ok' %}badge-success{% else %}badge-high{% endif %}">
+                            {% if analysis_ctx.selected_capture.status == 'ok' %}Parsed OK{% else %}{{ analysis_ctx.selected_capture.status|upper }}{% endif %}
+                        </span>
+                    </span>
+                </div>
+                <a href="?all=1" style="font-size: 12px; font-weight: 600;">View All Captures</a>
+            </div>
+            {% endif %}
+
+            <div class="page-content">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert-flash {{ category }}">
+                                <span>{{ message }}</span>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                {% if error_msg %}
+                    <div class="alert-flash error">
+                        <span>{{ error_msg }}</span>
+                    </div>
+                {% endif %}
+
+                {% block content %}{% endblock %}
+            </div>
+
+            <footer class="main-footer">
+                NetGuard Network Intrusion Detection, Prevention &amp; Forensic Correlation &bull; Rule Heuristics + Isolation Forest ML
+            </footer>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+    function switchCaptureScope(val) {
+        const url = new URL(window.location.href);
+        if (val === 'all') {
+            url.searchParams.set('all', '1');
+            url.searchParams.delete('capture_id');
+            url.searchParams.delete('run_id');
+        } else {
+            url.searchParams.delete('all');
+            url.searchParams.set('capture_id', val);
+            url.searchParams.delete('run_id');
+        }
+        window.location.href = url.toString();
+    }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

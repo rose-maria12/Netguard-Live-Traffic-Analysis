@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Port Scan Detector — NetGuard{% endblock %}
+{% block topbar_title %}Module 2 — Port Scan Detection{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Vertical Port Scan Detection</h1>
+        <p class="page-subtitle">Evaluates TCP connection flows grouped by (initiator, responder, 20s window) to detect rapid vertical port probing.</p>
+    </div>
+    <span class="stage-badge stage-reconnaissance" style="font-size: 12px; padding: 4px 10px;">Stage: Reconnaissance</span>
+</div>
+
+<!-- Expandable Rule Parameters & How It Works -->
+<details class="how-it-works">
+    <summary>How Vertical Port Scan Detection Works &amp; Active Thresholds</summary>
+    <div class="how-it-works-body">
+        <p style="margin-bottom: 8px;">
+            Groups TCP flows by <code>(initiator_ip, responder_ip, 20s window)</code> and triggers when an initiator probes at least <strong>{{ config.min_distinct_ports }} distinct destination ports</strong> on a single target with a failed connection ratio (<code>no_response</code> or <code>reset</code>) of at least <strong>{{ "%.0f"|format(config.min_failed_ratio * 100) }}%</strong>.
+        </p>
+        <div class="param-strip">
+            <span class="param-pill">Min Distinct Ports: <strong>&ge; {{ config.min_distinct_ports }}</strong></span>
+            <span class="param-pill">Min Failed Ratio: <strong>&ge; {{ "%.0f"|format(config.min_failed_ratio * 100) }}%</strong></span>
+            <span class="param-pill">Window: <strong>{{ config.window_seconds }}s tumbling</strong></span>
+            <span class="param-pill">Confidence: <strong>{{ config.confidence }}</strong></span>
+        </div>
+    </div>
+</details>
+
+<!-- Scenario Suggested Precautions & Next Steps -->
+<div class="card" style="border-left: 4px solid var(--primary); background: var(--bg-card); margin-bottom: 20px;">
+    <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <div style="font-size: 20px; color: var(--primary); line-height: 1.2;">🛡️</div>
+        <div>
+            <div style="font-size: 11.5px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                Flag: <span style="color: var(--text-primary);">Port scan</span> &bull; Suggested Precautions / Next Steps
+            </div>
+            <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5;">
+                Check whether this is an authorised scan. Inspect the targeted ports. If an untrusted source is probing your laptop, consider a temporary inbound block.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Metrics -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Port Scan Alerts</div>
+        <div class="stat-value" data-count="{{ alerts|length }}" style="margin-top: 4px;">{{ alerts|length }}</div>
+        <div class="stat-detail">Detected vertical scan patterns</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">TCP Flows Evaluated</div>
+        <div class="stat-value" data-count="{{ total_tcp_flows }}" style="margin-top: 4px;">{{ total_tcp_flows }}</div>
+        <div class="stat-detail">{% if analysis_ctx and not analysis_ctx.is_all_captures %}In selected capture (#{{ analysis_ctx.capture_id }}){% else %}Across all ingested PCAPs{% endif %}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Analyzed Captures</div>
+        <div class="stat-value" data-count="{{ captures_scanned }}" style="margin-top: 4px;">{{ captures_scanned }}</div>
+        <div class="stat-detail">Ingested (parsed ok) sessions</div>
+    </div>
+</div>
+
+{% if not alerts %}
+<div class="card">
+    <div class="empty-state">
+        <h3>No Port Scan Probing Detected</h3>
+        <p>No TCP flow clusters met or exceeded the vertical port threshold (&ge;{{ config.min_distinct_ports }} ports, &ge;{{ "%.0f"|format(config.min_failed_ratio * 100) }}% failed connections) within any 20-second window.</p>
+    </div>
+</div>
+{% else %}
+{% for a in alerts %}
+<div class="card" style="border-left: 3px solid var(--color-high);">
+    <div class="card-header">
+        <h2 class="card-title">
+            Alert #{{ a.id }} ({{ a.alert_type }}): Vertical Scan from <code>{{ a.src_ip }}</code> &rarr; <code>{{ a.dst_ip if a.dst_ip else 'Multiple Targets' }}</code>
+        </h2>
+        <span class="badge badge-{{ a.severity|lower }}">{{ a.severity }}</span>
+    </div>
+
+    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;">{{ a.summary }}</p>
+
+    <div class="result-detail" style="margin-bottom: 14px;">
+        <div class="result-detail-item">
+            <span class="result-detail-label">Source IP</span>
+            <span class="result-detail-value"><code>{{ a.src_ip }}</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Destination IP</span>
+            <span class="result-detail-value"><code>{{ a.dst_ip if a.dst_ip else 'Multiple' }}</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Probed Ports</span>
+            <span class="result-detail-value" style="color: var(--color-high); font-weight: 700;">{{ a.details.get('observed_ports', 'N/A') }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Failed Ratio</span>
+            <span class="result-detail-value">{{ "%.1f"|format(a.details.get('observed_failed_ratio', 0) * 100) }}%</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Flow Count</span>
+            <span class="result-detail-value">{{ a.details.get('total_flows', 'N/A') }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Confidence</span>
+            <span class="result-detail-value">{{ "%.2f"|format(a.confidence) }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Window Frame Span</span>
+            <span class="result-detail-value">#{{ a.first_frame }}&ndash;#{{ a.last_frame }}</span>
+        </div>
+        {% if a.trigger_frames %}
+        <div class="result-detail-item">
+            <span class="result-detail-label">Exact Trigger Frames</span>
+            <span class="result-detail-value"><code>{{ a.trigger_frames|length }} frame(s)</code></span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Suggested Precautions / Next Steps -->
+    <div style="margin-top: 12px; margin-bottom: 12px; padding: 10px 14px; background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--primary); border-radius: var(--radius-sm); font-size: 13px;">
+        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px;">Suggested Precautions / Next Steps:</div>
+        <div style="color: var(--text-primary); line-height: 1.45;">{{ a.suggested_precautions or "Check whether this is an authorised scan. Inspect the targeted ports. If an untrusted source is probing your laptop, consider a temporary inbound block." }}</div>
+    </div>
+
+    <!-- Wireshark Filters -->
+    <div class="filter-box" style="margin-bottom: 8px;">
+        <div>
+            <div style="font-size: 10.5px; color: var(--text-muted); font-weight: 600;">TRIGGER-DIRECTION WIRESHARK FILTER:</div>
+            <code>{{ a.wireshark_filter }}</code>
+        </div>
+        <button onclick="copyToClipboard('{{ a.wireshark_filter }}', this)" class="btn btn-sm btn-outline">Copy Trigger Filter</button>
+    </div>
+    {% if a.wireshark_bi_filter %}
+    <div class="filter-box">
+        <div>
+            <div style="font-size: 10.5px; color: var(--text-muted); font-weight: 600;">BIDIRECTIONAL INVESTIGATION FILTER:</div>
+            <code>{{ a.wireshark_bi_filter }}</code>
+        </div>
+        <button onclick="copyToClipboard('{{ a.wireshark_bi_filter }}', this)" class="btn btn-sm btn-outline">Copy Bidirectional</button>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

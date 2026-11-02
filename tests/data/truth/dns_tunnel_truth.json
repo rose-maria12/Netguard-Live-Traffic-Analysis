@@ -1,0 +1,12 @@
+{
+  "pcap_filename": "dns_tunnel.pcap",
+  "expected_alerts": [
+    {
+      "alert_type": "dns_anomaly",
+      "src_ip": "192.168.1.102",
+      "dst_ip": null,
+      "dst_port": null,
+      "stage": "Possible Exploitation"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+﻿{
+  "_comment": "NetGuard ground-truth template — copy this file, fill in real values, and rename to <experiment_id>_truth.json",
+  "experiment_id": "REPLACE_WITH_EXP_ID",
+  "pcap_filename": "REPLACE_WITH_PCAP_FILENAME.pcap",
+  "description": "Brief description of what traffic was captured and what attack or benign activity it represents",
+  "category": "port_scan",
+  "collection_status": "not_collected",
+  "start_time": null,
+  "end_time": null,
+  "source_ip": null,
+  "destination_ip": null,
+  "expected_alerts": [
+    {
+      "_comment": "Remove this placeholder and add real expected alerts after capturing traffic",
+      "alert_type": "port_scan",
+      "src_ip": "REPLACE_WITH_ATTACKER_IP",
+      "dst_ip": "REPLACE_WITH_VICTIM_IP",
+      "expected_label": "malicious"
+    }
+  ],
+  "ground_truth_notes": "Do not invent timestamps or IPs. Record values observed during the actual experiment.",
+  "evidence_reference": "REPLACE_WITH_PCAP_SHA256_OR_FILENAME"
+}

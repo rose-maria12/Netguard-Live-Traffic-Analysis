@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}Isolation Forest ML Anomaly Detector — NetGuard{% endblock %}
+{% block topbar_title %}Module 2 — Isolation Forest ML Anomaly Detection{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Isolation Forest Machine Learning Anomaly Detector</h1>
+        <p class="page-subtitle">Unsupervised ensemble anomaly detection across 9 host-window behavioral features using a calibrated 99th-percentile baseline threshold.</p>
+    </div>
+    <span class="badge {% if model_available %}badge-success{% else %}badge-medium{% endif %}" style="font-size: 12px; padding: 5px 10px;">
+        {% if model_available %}Trained Baseline Active (v{{ model_meta.version }}){% else %}Model Not Trained{% endif %}
+    </span>
+</div>
+
+<!-- Model Configuration & Provenance Summary -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Model Provenance &amp; Calibration Summary</h2>
+        <span class="card-badge">20s Tumbling Host Windows</span>
+    </div>
+    <div class="result-detail">
+        <div class="result-detail-item">
+            <span class="result-detail-label">Model Artifact</span>
+            <span class="result-detail-value">
+                {% if model_available %}
+                <code>{{ model_meta.name }}.joblib</code>
+                {% else %}
+                <span style="color: var(--text-muted);">Awaiting training</span>
+                {% endif %}
+            </span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Trained Timestamp</span>
+            <span class="result-detail-value">{{ model_meta.trained_at if model_available else '—' }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Training Dataset</span>
+            <span class="result-detail-value">CIC-IDS2017 Monday Benign</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Temporal Split (215 Windows)</span>
+            <span class="result-detail-value">
+                {{ model_meta.n_train_rows if model_available else config.min_baseline_windows }} Train (47.0%) &bull;
+                {{ model_meta.n_calib_rows if model_available else 49 }} Calib (22.8%) &bull;
+                {{ model_meta.n_test_rows or 65 }} Held-Out (30.2%)
+            </span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Decision Threshold</span>
+            <span class="result-detail-value" style="color: var(--primary); font-weight: 700;">
+                {{ "%.4f"|format(model_meta.threshold) if model_available else '—' }} ({{ config.threshold_percentile }}th pct)
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- Expandable Feature Schema & Methodological Distinctions -->
+<details class="how-it-works">
+    <summary>How Isolation Forest Scoring Works, 9-Feature Schema &amp; Methodological Boundaries</summary>
+    <div class="how-it-works-body">
+        <p style="margin-bottom: 8px;"><strong>Ordered 9-Feature Vector (<code>log1p</code> + <code>StandardScaler</code> fitted on 101 training windows only):</strong></p>
+        <div class="param-strip" style="margin-bottom: 12px;">
+            <span class="param-pill">1. <strong>unique_dst_ports</strong></span>
+            <span class="param-pill">2. <strong>unique_dst_ips</strong></span>
+            <span class="param-pill">3. <strong>failed_flow_ratio</strong></span>
+            <span class="param-pill">4. <strong>max_flows_same_target</strong></span>
+            <span class="param-pill">5. <strong>dns_query_count</strong></span>
+            <span class="param-pill">6. <strong>avg_qname_length</strong></span>
+            <span class="param-pill">7. <strong>nxdomain_ratio</strong></span>
+            <span class="param-pill">8. <strong>bytes_out_external</strong></span>
+            <span class="param-pill">9. <strong>out_in_ratio</strong></span>
+        </div>
+        <ul style="margin: 0; padding-left: 18px; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px;">
+            <li><strong>Calibration &ne; Testing:</strong> The 49 calibration windows set the 99th-percentile threshold (<code>{{ "%.4f"|format(model_meta.threshold) if model_available else '0.5978' }}</code>) and are not a test set.</li>
+            <li><strong>99th-Percentile Threshold &ne; Guaranteed 1% Unseen FPR:</strong> Calibrating at the 99th percentile cuts off the top 1% of calibration windows; on the 65 held-out benign windows, the observed false-positive rate was <code>3/65 = 4.62%</code>.</li>
+            <li><strong>Complementary Coverage:</strong> Moderate single-feature shifts (such as <code>brute_force.pcap</code> score <code>0.4400</code> and <code>exfiltration.pcap</code> score <code>0.5668</code>) remain below the multivariate tree threshold and are caught by deterministic rule detectors.</li>
+        </ul>
+    </div>
+</details>
+
+<!-- Scenario Suggested Precautions & Next Steps -->
+<div class="card" style="border-left: 4px solid var(--primary); background: var(--bg-card); margin-bottom: 20px;">
+    <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <div style="font-size: 20px; color: var(--primary); line-height: 1.2;">🛡️</div>
+        <div>
+            <div style="font-size: 11.5px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                Flag: <span style="color: var(--text-primary);">ML anomaly</span> &bull; Suggested Precautions / Next Steps
+            </div>
+            <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5;">
+                Review the unusual features, inspect supporting packets, and check whether rule detectors also flagged the activity. Avoid blocking solely because of the ML score.
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if not model_available %}
+<div class="card">
+    <div class="empty-state">
+        <h3>No Pre-Trained Baseline Model</h3>
+        <p>Run <code>python scripts/train_iforest_baseline.py</code> to train the baseline model.</p>
+    </div>
+</div>
+{% else %}
+<div class="stats-grid">
+    <div class="stat-card stat-blue">
+        <div class="stat-label">Scored Host Windows</div>
+        <div class="stat-value" style="margin-top: 4px;">{{ total_windows_scored }}</div>
+        <div class="stat-detail">Evaluated internal host 20s windows</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">ML Anomaly Alerts</div>
+        <div class="stat-value" data-count="{{ alerts|length }}" style="margin-top: 4px;">{{ alerts|length }}</div>
+        <div class="stat-detail">Windows exceeding {{ "%.4f"|format(model_meta.threshold) }} threshold</div>
+    </div>
+</div>
+
+{% if scored_windows %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Scored Host-Window Feature Vectors &amp; Anomaly Decisions</h2>
+        <span class="card-badge">Decision Rule: score &gt; {{ "%.4f"|format(model_meta.threshold) }} &rArr; ANOMALY</span>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table" style="font-size: 12px;">
+            <thead>
+                <tr>
+                    <th>Window</th>
+                    <th>Host IP</th>
+                    <th>Frames</th>
+                    <th title="unique_dst_ports">Ports</th>
+                    <th title="unique_dst_ips">Dst IPs</th>
+                    <th title="failed_flow_ratio">Fail Ratio</th>
+                    <th title="max_flows_same_target">Max Target</th>
+                    <th title="dns_query_count">DNS Q</th>
+                    <th title="avg_qname_length">Avg QLen</th>
+                    <th title="nxdomain_ratio">NX Ratio</th>
+                    <th title="bytes_out_external">Ext Bytes Out</th>
+                    <th title="out_in_ratio">Out/In Ratio</th>
+                    <th>IF Score</th>
+                    <th>Threshold</th>
+                    <th>Decision</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for w in scored_windows %}
+                <tr style="font-family: 'JetBrains Mono', monospace;">
+                    <td style="color: var(--text-muted);">#{{ w.id }}</td>
+                    <td><strong>{{ w.host_ip }}</strong></td>
+                    <td style="color: var(--text-muted);">{{ w.first_frame }}&ndash;{{ w.last_frame }}</td>
+                    <td>{{ w.unique_dst_ports }}</td>
+                    <td>{{ w.unique_dst_ips }}</td>
+                    <td>{{ "%.2f"|format(w.failed_flow_ratio or 0) }}</td>
+                    <td>{{ w.max_flows_same_target }}</td>
+                    <td>{{ w.dns_query_count }}</td>
+                    <td>{{ "%.1f"|format(w.avg_qname_length or 0) }}</td>
+                    <td>{{ "%.2f"|format(w.nxdomain_ratio or 0) }}</td>
+                    <td>{{ w.bytes_out_external }}</td>
+                    <td>{{ "%.2f"|format(w.out_in_ratio or 0) }}</td>
+                    <td style="font-weight: 700; color: {% if w.if_flag %}var(--color-critical){% else %}var(--color-success){% endif %};">
+                        {{ "%.4f"|format(w.if_score) if w.if_score is not none else '—' }}
+                    </td>
+                    <td style="color: var(--text-muted);">{{ "%.4f"|format(model_meta.threshold) }}</td>
+                    <td>
+                        {% if w.if_flag %}
+                        <span class="badge badge-critical">ANOMALY</span>
+                        {% else %}
+                        <span class="badge badge-success">NORMAL</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if not alerts %}
+<div class="card">
+    <div class="empty-state">
+        <h3>No ML Anomalies Triggered</h3>
+        <p>All evaluated host windows scored below the {{ "%.4f"|format(model_meta.threshold) }} decision threshold.</p>
+    </div>
+</div>
+{% else %}
+{% for a in alerts %}
+<div class="card" style="border-left: 3px solid var(--primary);">
+    <div class="card-header">
+        <h2 class="card-title">
+            Alert #{{ a.id }}: Isolation Forest Anomaly for Host <code>{{ a.src_ip }}</code>
+        </h2>
+        <span class="badge badge-{{ a.severity|lower }}">{{ a.severity }}</span>
+    </div>
+    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;">{{ a.summary }}</p>
+
+    <div class="result-detail" style="margin-bottom: 14px;">
+        <div class="result-detail-item">
+            <span class="result-detail-label">Host IP</span>
+            <span class="result-detail-value"><code>{{ a.src_ip }}</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Anomaly Score</span>
+            <span class="result-detail-value" style="color: var(--color-critical); font-weight: 700;">{{ "%.4f"|format(a.details.get('score', 0)) }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Decision Threshold</span>
+            <span class="result-detail-value">{{ "%.4f"|format(a.details.get('threshold', 0)) }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Largest Deviation</span>
+            <span class="result-detail-value" style="color: var(--primary); font-weight: 600;">{{ a.details.get('dominant_family', 'Unclassified') }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Frame Range</span>
+            <span class="result-detail-value">#{{ a.first_frame }}&ndash;#{{ a.last_frame }}</span>
+        </div>
+    </div>
+
+    <!-- Suggested Precautions / Next Steps -->
+    <div style="margin-top: 12px; margin-bottom: 12px; padding: 10px 14px; background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--primary); border-radius: var(--radius-sm); font-size: 13px;">
+        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px;">Suggested Precautions / Next Steps:</div>
+        <div style="color: var(--text-primary); line-height: 1.45;">{{ a.suggested_precautions or "Review the unusual features, inspect supporting packets, and check whether rule detectors also flagged the activity. Avoid blocking solely because of the ML score." }}</div>
+    </div>
+
+    <div class="filter-box">
+        <code>{{ a.wireshark_filter }}</code>
+        <button onclick="copyToClipboard('{{ a.wireshark_filter }}', this)" class="btn btn-sm btn-outline">Copy Filter</button>
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endblock %}

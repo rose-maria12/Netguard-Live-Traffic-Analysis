@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Upload & Ingestion — NetGuard{% endblock %}
+{% block topbar_title %}PCAP Capture Ingestion{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Packet Capture Ingestion &amp; Analysis</h1>
+        <p class="page-subtitle">Import PCAP or PCAPng capture files for decoding, flow reconstruction, heuristic detection, Isolation Forest scoring, and incident correlation.</p>
+    </div>
+</div>
+
+<!-- Upload Zone -->
+<div class="card" style="max-width: 720px; margin: 0 auto 20px auto;">
+    <div class="card-header">
+        <h2 class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import Capture File
+        </h2>
+        <span class="card-badge">.pcap / .pcapng / .cap</span>
+    </div>
+    <form action="{{ url_for('upload') }}" method="POST" enctype="multipart/form-data" id="upload-form">
+        <div class="upload-zone" id="upload-zone" style="border: 2px dashed var(--border-strong); border-radius: var(--radius-md); padding: 32px 20px; text-align: center; cursor: pointer; background: var(--bg-subtle); transition: border-color var(--transition-fast);">
+            <div style="width: 42px; height: 42px; margin: 0 auto 10px auto; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); background: var(--color-info-bg); color: var(--primary); border: 1px solid var(--color-info-border);">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            </div>
+            <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">Drag and drop capture file here, or click to browse</div>
+            <div style="font-size: 12px; color: var(--text-muted);">Supports standard .pcap, .pcapng, and .cap files (up to 50 MB)</div>
+            <div id="upload-filename" style="display:none; margin-top: 12px; font-weight: 600; color: var(--primary); font-size: 12.5px; font-family: 'JetBrains Mono', monospace;"></div>
+            <input type="file" name="file" id="pcap-file-input" accept=".pcap,.pcapng,.cap" required style="display: none;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 11px; margin-top: 14px; font-size: 13.5px;">
+            Execute NetGuard Analysis Pipeline
+        </button>
+    </form>
+
+    <!-- Quick Load Sample Scenarios -->
+    <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+        <div style="font-size: 11.5px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px;">
+            Or Load &amp; Analyze a Built-In Sample Scenario:
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            {% for sample_file, sample_label in [
+                ('demo_scenario.pcap', 'Demo Scenario (Full)'),
+                ('multi_stage.pcap', 'Multi-Stage Attack'),
+                ('port_scan.pcap', 'Port Scan'),
+                ('brute_force.pcap', 'Brute Force'),
+                ('dns_tunnel.pcap', 'DNS Tunneling'),
+                ('exfiltration.pcap', 'Outbound Exfiltration'),
+                ('benign.pcap', 'Benign Baseline')
+            ] %}
+            <form action="{{ url_for('upload_sample') }}" method="POST" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="sample_name" value="{{ sample_file }}">
+                <button type="submit" class="btn btn-sm btn-outline" title="Import and analyze {{ sample_file }}">
+                    {{ sample_label }}
+                </button>
+            </form>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Expandable Pipeline Stages Explanation -->
+<details class="how-it-works" style="max-width: 720px; margin: 0 auto 20px auto;">
+    <summary>How the 4-Stage Offline Ingestion &amp; Analysis Pipeline Works</summary>
+    <div class="how-it-works-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+            <div style="padding: 10px 12px; background: var(--bg-card); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase;">1. Ingestion</div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 3px;">Extracts 1-based frame numbers, protocols, TCP flags, and DNS events into SQLite.</div>
+            </div>
+            <div style="padding: 10px 12px; background: var(--bg-card); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">2. Features &amp; Rules</div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 3px;">Evaluates 20s tumbling host windows against port scan, brute force, DNS, and egress rules.</div>
+            </div>
+            <div style="padding: 10px 12px; background: var(--bg-card); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 11px; font-weight: 700; color: var(--text-primary); text-transform: uppercase;">3. ML Anomaly</div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 3px;">Isolation Forest scores 9-feature host vectors against the 99th-percentile baseline threshold.</div>
+            </div>
+            <div style="padding: 10px 12px; background: var(--bg-card); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 11px; font-weight: 700; color: var(--color-critical); text-transform: uppercase;">4. Correlation</div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 3px;">Union-Find groups related alerts and computes a 0&ndash;100 heuristic prioritization score.</div>
+            </div>
+        </div>
+    </div>
+</details>
+
+<!-- Existing Captures Table -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Ingested Capture Sessions</h2>
+        <span class="card-badge">{{ captures|length }} recorded</span>
+    </div>
+    {% if not captures %}
+        <div class="empty-state">
+            <h3>No Captures Imported</h3>
+            <p>Select or drag a PCAP file above to begin forensic extraction and incident correlation.</p>
+        </div>
+    {% else %}
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Capture ID</th>
+                        <th>Filename</th>
+                        <th>SHA-256 Digest</th>
+                        <th>Format</th>
+                        <th>Packets Stored</th>
+                        <th>Reconstructed Flows</th>
+                        <th>Skipped</th>
+                        <th>Status</th>
+                        <th style="text-align: right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cap in captures %}
+                    <tr>
+                        <td><strong>#{{ cap.id }}</strong></td>
+                        <td><code>{{ cap.filename }}</code></td>
+                        <td><code>{{ cap.sha256[:16] }}&hellip;</code></td>
+                        <td>{{ cap.file_format }}</td>
+                        <td>{{ "{:,}".format(cap.packets_stored) }}</td>
+                        <td><strong>{{ "{:,}".format(cap.flows_count|default(0)) }}</strong></td>
+                        <td>{{ cap.frames_skipped }}</td>
+                        <td title="Indicates PCAP ingestion succeeded, not whether traffic is benign">
+                            <span class="badge badge-{% if cap.status == 'ok' %}success{% else %}critical{% endif %}">
+                                {% if cap.status == 'ok' %}ingested (parsed ok){% else %}{{ cap.status }}{% endif %}
+                            </span>
+                        </td>
+                        <td style="text-align: right;">
+                            <a href="{{ url_for('dashboard', capture_id=cap.id) }}" class="btn btn-sm btn-outline">View Scope</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var zone = document.getElementById('upload-zone');
+    var input = document.getElementById('pcap-file-input');
+    var filenameDisplay = document.getElementById('upload-filename');
+
+    if (zone && input) {
+        zone.addEventListener('click', function() {
+            input.click();
+        });
+
+        zone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            zone.style.borderColor = 'var(--primary)';
+        });
+
+        zone.addEventListener('dragleave', function() {
+            zone.style.borderColor = 'var(--border-strong)';
+        });
+
+        zone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            zone.style.borderColor = 'var(--border-strong)';
+            if (e.dataTransfer.files.length) {
+                input.files = e.dataTransfer.files;
+                filenameDisplay.innerText = 'Selected: ' + e.dataTransfer.files[0].name;
+                filenameDisplay.style.display = 'block';
+            }
+        });
+
+        input.addEventListener('change', function() {
+            if (input.files.length) {
+                filenameDisplay.innerText = 'Selected: ' + input.files[0].name;
+                filenameDisplay.style.display = 'block';
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

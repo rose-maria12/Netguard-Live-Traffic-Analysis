@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block title %}Traffic Forensics — NetGuard{% endblock %}
+{% block topbar_title %}Network Traffic & PCAP Forensics{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Network Traffic &amp; PCAP Forensics</h1>
+        <p class="page-subtitle">1-based Wireshark frame mapping, canonical bidirectional 5-tuple flow aggregation, and DNS transaction telemetry.</p>
+    </div>
+</div>
+
+{% if not captures %}
+<div class="card">
+    <div class="empty-state">
+        <h3>No Captures Analyzed</h3>
+        <p>Upload a .pcap or .pcapng file via the Upload &amp; Analyze console to inspect decoded packets and reconstructed flows.</p>
+        <a href="{{ url_for('upload') }}" class="btn btn-primary" style="margin-top: 12px;">Ingest PCAP File</a>
+    </div>
+</div>
+{% else %}
+
+<!-- Overall Forensic Summary -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">{% if analysis_ctx and not analysis_ctx.is_all_captures %}Scoped Capture{% else %}Total Captures{% endif %}</div>
+        <div class="stat-value" style="margin-top: 4px;">{{ captures|length }}</div>
+        <div class="stat-detail">{% if analysis_ctx and not analysis_ctx.is_all_captures and analysis_ctx.selected_capture %}Selected: #{{ analysis_ctx.selected_capture.id }} ({{ analysis_ctx.selected_capture.filename }}){% else %}Ingested PCAP &amp; PCAPng files{% endif %}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Stored Packets</div>
+        <div class="stat-value" style="margin-top: 4px;">{{ "{:,}".format(total_packets) }}</div>
+        <div class="stat-detail">Indexed 1-based frame numbers</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Bidirectional Flows</div>
+        <div class="stat-value" style="margin-top: 4px;">{{ "{:,}".format(total_flows) }}</div>
+        <div class="stat-detail">Canonical 5-tuple TCP/UDP/ICMP flows</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">DNS Events</div>
+        <div class="stat-value" style="margin-top: 4px;">{{ "{:,}".format(total_dns) }}</div>
+        <div class="stat-detail">DNS query &amp; response packets</div>
+    </div>
+</div>
+
+<!-- Per-Capture Analysis Results -->
+{% for cap in captures %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <code>{{ cap.filename }}</code>
+        </h2>
+        <span class="badge badge-{% if cap.status == 'ok' %}success{% else %}info{% endif %}" title="Indicates PCAP parsing succeeded, not that traffic is benign">
+            {% if cap.status == 'ok' %}ingested (parsed ok){% else %}{{ cap.status }}{% endif %}
+        </span>
+    </div>
+
+    <div class="result-detail" style="margin-bottom: 18px;">
+        <div class="result-detail-item">
+            <span class="result-detail-label">Capture ID</span>
+            <span class="result-detail-value">#{{ cap.id }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">SHA-256 Digest</span>
+            <span class="result-detail-value"><code>{{ cap.sha256[:20] }}&hellip;</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Format</span>
+            <span class="result-detail-value">{{ cap.file_format }} ({{ cap.link_type }})</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">File Size</span>
+            <span class="result-detail-value">{{ "%.2f"|format(cap.size_bytes / 1024.0) }} KB</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Total Frames</span>
+            <span class="result-detail-value">{{ "{:,}".format(cap.frames_total) }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Packets Stored</span>
+            <span class="result-detail-value" style="color: var(--primary); font-weight: 700;">{{ "{:,}".format(cap.packets_stored) }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Frames Skipped</span>
+            <span class="result-detail-value">{{ cap.frames_skipped }}</span>
+        </div>
+    </div>
+
+    {% if cap.packet_sample %}
+    <div style="margin-bottom: 20px;">
+        <div class="form-label">Sample Parsed Packets (First 15 Frames)</div>
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Frame</th>
+                        <th>Timestamp</th>
+                        <th>Source IP</th>
+                        <th>Destination IP</th>
+                        <th>Protocol</th>
+                        <th>Src Port</th>
+                        <th>Dst Port</th>
+                        <th>Length</th>
+                        <th>TTL</th>
+                        <th>TCP Flags</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pkt in cap.packet_sample %}
+                    <tr>
+                        <td><strong>#{{ pkt.frame_no }}</strong></td>
+                        <td style="font-family: monospace; font-size: 12px;">{{ "%.6f"|format(pkt.ts) }}</td>
+                        <td><code>{{ pkt.src_ip }}</code></td>
+                        <td><code>{{ pkt.dst_ip }}</code></td>
+                        <td><span class="badge badge-info">{{ pkt.proto }}</span></td>
+                        <td>{{ pkt.src_port if pkt.src_port else '—' }}</td>
+                        <td>{{ pkt.dst_port if pkt.dst_port else '—' }}</td>
+                        <td>{{ pkt.length }} B</td>
+                        <td>{{ pkt.ttl }}</td>
+                        <td><code>{{ pkt.tcp_flags if pkt.tcp_flags else '—' }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if cap.flow_sample %}
+    <div style="margin-bottom: 20px;">
+        <div class="form-label">Reconstructed Bidirectional Flows (First 15 Records)</div>
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Flow ID</th>
+                        <th>Start Time</th>
+                        <th>Initiator IP</th>
+                        <th>Src Port</th>
+                        <th>Responder IP</th>
+                        <th>Dst Port</th>
+                        <th>Protocol</th>
+                        <th>Pkts (Fwd/Rev)</th>
+                        <th>Bytes (Fwd/Rev)</th>
+                        <th>SYN / RST</th>
+                        <th>State</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for flow in cap.flow_sample %}
+                    <tr>
+                        <td><strong>#{{ flow.id }}</strong></td>
+                        <td style="font-family: monospace; font-size: 12px;">{{ "%.6f"|format(flow.start_ts) if flow.start_ts is not none else '—' }}</td>
+                        <td><code>{{ flow.initiator_ip }}</code></td>
+                        <td>{{ flow.initiator_port if flow.initiator_port else '—' }}</td>
+                        <td><code>{{ flow.responder_ip }}</code></td>
+                        <td>{{ flow.responder_port if flow.responder_port else '—' }}</td>
+                        <td><span class="badge badge-info">{{ flow.proto }}</span></td>
+                        <td>{{ flow.pkts_fwd }} / {{ flow.pkts_rev }}</td>
+                        <td>{{ "{:,}".format(flow.bytes_fwd) }} / {{ "{:,}".format(flow.bytes_rev) }}</td>
+                        <td>{{ flow.syn_count }} / {{ flow.rst_count }}</td>
+                        <td><span class="badge badge-{% if flow.state == 'established' %}success{% elif flow.state == 'reset' %}high{% else %}medium{% endif %}">{{ flow.state }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if cap.dns_sample %}
+    <div style="margin-bottom: 18px;">
+        <div class="form-label">DNS Query &amp; Response Events (First 15 Events)</div>
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Frame</th>
+                        <th>Source IP</th>
+                        <th>Destination IP</th>
+                        <th>Query Name</th>
+                        <th>QType</th>
+                        <th>Type</th>
+                        <th>RCode</th>
+                        <th>TXID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for dns in cap.dns_sample %}
+                    <tr>
+                        <td><strong>#{{ dns.frame_no }}</strong></td>
+                        <td><code>{{ dns.client_ip }}</code></td>
+                        <td><code>{{ dns.server_ip }}</code></td>
+                        <td style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><code>{{ dns.qname }}</code></td>
+                        <td>{{ dns.qtype }}</td>
+                        <td>{% if dns.is_response %}<span class="badge badge-success">Response</span>{% else %}<span class="badge badge-info">Query</span>{% endif %}</td>
+                        <td>{% if dns.rcode == 0 %}NoError{% elif dns.rcode == 3 %}<span class="badge badge-high">NXDOMAIN</span>{% else %}{{ dns.rcode }}{% endif %}</td>
+                        <td>{{ dns.txid }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if cap.proto_dist %}
+    <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+        <div class="form-label" style="margin-bottom: 8px;">Transport Protocol Distribution</div>
+        <div id="proto-chart-{{ cap.id }}"></div>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% for cap in captures %}
+    {% if cap.proto_dist %}
+    renderBarChart('proto-chart-{{ cap.id }}', [
+        {% for proto, count in cap.proto_dist.items() %}
+        { label: '{{ proto }}', value: {{ count }} },
+        {% endfor %}
+    ], 0);
+    {% endif %}
+    {% endfor %}
+});
+</script>
+{% endblock %}

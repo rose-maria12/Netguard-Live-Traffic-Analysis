@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Brute Force Detector — NetGuard{% endblock %}
+{% block topbar_title %}Module 2 — Brute Force / Repeated Connection Detection{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Brute Force &amp; Repeated Connection Detection</h1>
+        <p class="page-subtitle">Monitors repeated short-duration connection bursts against authentication service ports (SSH, FTP, Telnet, RDP, VNC).</p>
+    </div>
+    <span class="stage-badge stage-initial-access" style="font-size: 12px; padding: 4px 10px;">Stage: Access Attempt</span>
+</div>
+
+<!-- Expandable Rule Parameters & Caveat -->
+<details class="how-it-works">
+    <summary>How Brute Force Connection Heuristics Work &amp; Encrypted Traffic Caveat</summary>
+    <div class="how-it-works-body">
+        <p style="margin-bottom: 8px;">
+            Evaluates connection frequency per <code>(initiator_ip, responder_ip, service_port, 20s window)</code>. Triggers when at least <strong>{{ config.min_attempts }} connection attempts</strong> occur and at least <strong>{{ "%.0f"|format(config.min_short_ratio * 100) }}%</strong> are short flows (&le;{{ config.short_flow_seconds }}s).
+            <strong>Important:</strong> Encrypted protocols (such as SSH or RDP) do not expose plaintext authentication status in packet headers; this detector identifies transport-layer connection bursts rather than confirmed password failures.
+        </p>
+        <div class="param-strip">
+            <span class="param-pill">Service Ports: <strong>{{ config.service_ports | join(', ') }}</strong></span>
+            <span class="param-pill">Min Attempts: <strong>&ge; {{ config.min_attempts }}</strong></span>
+            <span class="param-pill">Short Flow: <strong>&le; {{ config.short_flow_seconds }}s</strong></span>
+            <span class="param-pill">Min Short Ratio: <strong>&ge; {{ "%.0f"|format(config.min_short_ratio * 100) }}%</strong></span>
+            <span class="param-pill">Confidence: <strong>{{ config.confidence }}</strong></span>
+        </div>
+    </div>
+</details>
+
+<!-- Scenario Suggested Precautions & Next Steps -->
+<div class="card" style="border-left: 4px solid var(--primary); background: var(--bg-card); margin-bottom: 20px;">
+    <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <div style="font-size: 20px; color: var(--primary); line-height: 1.2;">🛡️</div>
+        <div>
+            <div style="font-size: 11.5px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                Flag: <span style="color: var(--text-primary);">Brute-force-like activity</span> &bull; Suggested Precautions / Next Steps
+            </div>
+            <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5;">
+                Check authentication logs for failed logins. Review successful logins from that source. Consider temporary blocking, MFA, and login rate limits.
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Brute Force Alerts</div>
+        <div class="stat-value" data-count="{{ alerts|length }}" style="margin-top: 4px;">{{ alerts|length }}</div>
+        <div class="stat-detail">Repeated short connection bursts</div>
+    </div>
+</div>
+
+{% if not alerts %}
+<div class="card">
+    <div class="empty-state">
+        <h3>No Brute Force Patterns Detected</h3>
+        <p>No host exceeded the repeated short connection burst threshold (&ge;{{ config.min_attempts }} attempts) on authentication service ports within any 20-second window.</p>
+    </div>
+</div>
+{% else %}
+{% for a in alerts %}
+<div class="card" style="border-left: 3px solid var(--color-critical);">
+    <div class="card-header">
+        <h2 class="card-title">
+            Alert #{{ a.id }} ({{ a.alert_type }}): Repeated Short Connections from <code>{{ a.src_ip }}</code> &rarr; <code>{{ a.dst_ip if a.dst_ip else 'Unknown' }}:{{ a.dst_port if a.dst_port else '?' }}</code>
+        </h2>
+        <span class="badge badge-{{ a.severity|lower }}">{{ a.severity }}</span>
+    </div>
+    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;">{{ a.summary }}</p>
+
+    <div class="result-detail" style="margin-bottom: 14px;">
+        <div class="result-detail-item">
+            <span class="result-detail-label">Source IP</span>
+            <span class="result-detail-value"><code>{{ a.src_ip }}</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Destination</span>
+            <span class="result-detail-value"><code>{{ a.dst_ip }}:{{ a.dst_port }}</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Observed Attempts</span>
+            <span class="result-detail-value" style="color: var(--color-critical); font-weight: 700;">{{ a.details.get('observed_attempts', 'N/A') }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Short Flow Ratio</span>
+            <span class="result-detail-value">{{ "%.1f"|format(a.details.get('observed_short_ratio', 0) * 100) }}%</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Confidence</span>
+            <span class="result-detail-value">{{ "%.2f"|format(a.confidence) }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Window Frame Span</span>
+            <span class="result-detail-value">#{{ a.first_frame }}&ndash;#{{ a.last_frame }}</span>
+        </div>
+        {% if a.trigger_frames %}
+        <div class="result-detail-item">
+            <span class="result-detail-label">Exact Trigger Frames</span>
+            <span class="result-detail-value"><code>{{ a.trigger_frames|length }} frame(s)</code></span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Suggested Precautions / Next Steps -->
+    <div style="margin-top: 12px; margin-bottom: 12px; padding: 10px 14px; background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--primary); border-radius: var(--radius-sm); font-size: 13px;">
+        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px;">Suggested Precautions / Next Steps:</div>
+        <div style="color: var(--text-primary); line-height: 1.45;">{{ a.suggested_precautions or "Check authentication logs for failed logins. Review successful logins from that source. Consider temporary blocking, MFA, and login rate limits." }}</div>
+    </div>
+
+    <div class="filter-box" style="margin-bottom: 8px;">
+        <div>
+            <div style="font-size: 10.5px; color: var(--text-muted); font-weight: 600;">TRIGGER-DIRECTION WIRESHARK FILTER:</div>
+            <code>{{ a.wireshark_filter }}</code>
+        </div>
+        <button onclick="copyToClipboard('{{ a.wireshark_filter }}', this)" class="btn btn-sm btn-outline">Copy Trigger Filter</button>
+    </div>
+    {% if a.wireshark_bi_filter %}
+    <div class="filter-box">
+        <div>
+            <div style="font-size: 10.5px; color: var(--text-muted); font-weight: 600;">BIDIRECTIONAL INVESTIGATION FILTER:</div>
+            <code>{{ a.wireshark_bi_filter }}</code>
+        </div>
+        <button onclick="copyToClipboard('{{ a.wireshark_bi_filter }}', this)" class="btn btn-sm btn-outline">Copy Bidirectional</button>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Forensic Evidence & Wireshark Integration — NetGuard{% endblock %}
+{% block topbar_title %}Forensic Evidence & Wireshark Filters{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Forensic Evidence &amp; Wireshark Display Filters</h1>
+        <p class="page-subtitle">1-based frame references, SHA-256 capture provenance, and copyable Wireshark display filters for packet-level verification.</p>
+    </div>
+</div>
+
+<details class="how-it-works">
+    <summary>How to Verify NetGuard Findings in Wireshark</summary>
+    <div class="how-it-works-body">
+        <ol style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;">
+            <li>Locate the alert below and verify the original PCAP SHA-256 digest.</li>
+            <li>Copy either the <strong>Trigger-Direction Wireshark Display Filter</strong> (initiator &rarr; target) or the <strong>Bidirectional Investigation Filter</strong> (includes SYN-ACK, RST, and DNS replies).</li>
+            <li>Open the corresponding PCAP/PCAPng file in Wireshark, paste the filter into the display filter bar, and inspect the exact matching frame numbers.</li>
+        </ol>
+    </div>
+</details>
+
+{% if not alerts_evidence %}
+    <div class="card">
+        <div class="empty-state">
+            <h3>No Forensic Evidence Items</h3>
+            <p>No forensic evidence records exist in the current capture scope.</p>
+        </div>
+    </div>
+{% else %}
+    {% for a in alerts_evidence %}
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    Alert #{{ a.id }}: {{ a.alert_type }} (<code>{{ a.rule_name or a.detector }}</code>)
+                </h2>
+                <span class="badge badge-{{ a.severity|lower }}">{{ a.severity }}</span>
+            </div>
+
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;">{{ a.summary }}</p>
+
+            <div class="result-detail" style="margin-bottom: 14px;">
+                <div class="result-detail-item">
+                    <span class="result-detail-label">Source IP</span>
+                    <span class="result-detail-value"><code>{{ a.src_ip }}</code></span>
+                </div>
+                <div class="result-detail-item">
+                    <span class="result-detail-label">Destination IP</span>
+                    <span class="result-detail-value"><code>{{ a.dst_ip if a.dst_ip else 'N/A' }}</code></span>
+                </div>
+                <div class="result-detail-item">
+                    <span class="result-detail-label">Destination Port</span>
+                    <span class="result-detail-value">{{ a.dst_port if a.dst_port else 'N/A' }}</span>
+                </div>
+                <div class="result-detail-item">
+                    <span class="result-detail-label">PCAP SHA-256</span>
+                    <span class="result-detail-value"><code>{{ a.pcap_sha256[:16] }}&hellip;</code></span>
+                </div>
+                <div class="result-detail-item">
+                    <span class="result-detail-label">Window Frame Span</span>
+                    <span class="result-detail-value">#{{ a.first_frame }}&ndash;#{{ a.last_frame }}</span>
+                </div>
+                <div class="result-detail-item">
+                    <span class="result-detail-label">Exact Trigger Frames</span>
+                    <span class="result-detail-value">
+                        {% if a.trigger_frames %}
+                            <code>{{ a.trigger_frames[:10]|join(', ') }}{% if a.trigger_frames|length > 10 %}&hellip; ({{ a.trigger_frames|length }}){% endif %}</code>
+                        {% else %}
+                            <span style="color: var(--text-muted);">Window aggregate</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+                <label class="form-label" style="margin-bottom: 4px;">1. Trigger-Direction Wireshark Display Filter (Source &rarr; Destination)</label>
+                <div class="filter-box">
+                    <code>{{ a.wireshark_filter }}</code>
+                    <button onclick="copyToClipboard('{{ a.wireshark_filter }}', this)" class="btn btn-sm btn-primary">Copy Trigger Filter</button>
+                </div>
+            </div>
+            <div style="margin-bottom: 14px;">
+                <label class="form-label" style="margin-bottom: 4px;">2. Bidirectional Investigation Filter (Includes Replies / SYN-ACK / RST)</label>
+                <div class="filter-box">
+                    <code>{{ a.wireshark_bi_filter }}</code>
+                    <button onclick="copyToClipboard('{{ a.wireshark_bi_filter }}', this)" class="btn btn-sm btn-outline">Copy Bidirectional Filter</button>
+                </div>
+            </div>
+
+            {% if a.evidence_items %}
+                <div class="form-label" style="margin-top: 12px;">Recorded Frame / Flow Evidence</div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Ref Type</th>
+                                <th>Ref ID</th>
+                                <th>Frame #</th>
+                                <th>Evidence Note</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ev in a.evidence_items %}
+                            <tr>
+                                <td><span class="badge badge-info">{{ ev.ref_type }}</span></td>
+                                <td>{{ ev.ref_id }}</td>
+                                <td>Frame #{{ ev.frame_no if ev.frame_no else '—' }}</td>
+                                <td>{{ ev.note }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+        </div>
+    {% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Correlated Incidents — NetGuard{% endblock %}
+{% block topbar_title %}Correlated Security Incidents{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Correlated Security Incidents</h1>
+        <p class="page-subtitle">Union-Find grouped alert clusters ranked by heuristic prioritization score (0&ndash;100 scale).</p>
+    </div>
+</div>
+
+<details class="how-it-works">
+    <summary>How Multi-Stage Incident Correlation &amp; Prioritization Scoring Work</summary>
+    <div class="how-it-works-body">
+        <p style="margin: 0;">
+            NetGuard correlates alerts within a <strong>300-second window</strong> using Union-Find across two graph linking rules:
+            <strong>(1) Same-Source Grouping</strong> (multiple alerts originating from the same Source IP) and
+            <strong>(2) Victim-to-Source Pivot</strong> (a target of an earlier alert subsequently initiates outbound alerts).
+            Incident scores (0&ndash;100) combine strongest alert severity (up to 35 pts), stage diversity (up to 30 pts), chronological kill-chain order (up to 15 pts), and ML/outbound corroboration (up to 20 pts). Scores are prioritization heuristics, not statistical probabilities.
+        </p>
+    </div>
+</details>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Prioritized Incidents List</h2>
+        <span class="card-badge">{% if incidents %}{{ incidents|length }}{% else %}0{% endif %} incidents</span>
+    </div>
+    {% if not incidents %}
+        <div class="empty-state">
+            <h3>No Correlated Incidents</h3>
+            <p>No correlated incident clusters found in the current scope.</p>
+        </div>
+    {% else %}
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Primary Source IP</th>
+                        <th>Involved Host IPs</th>
+                        <th>Stages</th>
+                        <th>Multi-Stage</th>
+                        <th>Rule / ML Alerts</th>
+                        <th>Score</th>
+                        <th>Level</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inc in incidents %}
+                    <tr>
+                        <td><strong>#{{ inc.id }}</strong></td>
+                        <td><code>{{ inc.primary_ip }}</code></td>
+                        <td><span style="font-size: 12px; color: var(--text-secondary); font-family: monospace;">{{ inc.involved_ips | join(', ') }}</span></td>
+                        <td>{{ inc.stages | join(' &rarr; ') | safe }}</td>
+                        <td>
+                            {% if inc.is_multistage %}
+                                <span class="badge badge-critical">Yes ({{ inc.stage_count }})</span>
+                            {% else %}
+                                <span class="badge badge-muted">Single (1)</span>
+                            {% endif %}
+                        </td>
+                        <td>Rule: {{ inc.rule_alert_count }} &bull; ML: {{ inc.ml_alert_count }}</td>
+                        <td><strong>{{ "%.1f"|format(inc.score) }}</strong></td>
+                        <td><span class="badge badge-{{ inc.level|lower }}">{{ inc.level }}</span></td>
+                        <td><a href="{{ url_for('incident_detail', incident_id=inc.id) }}" class="btn btn-sm btn-primary">Details &amp; Timeline</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

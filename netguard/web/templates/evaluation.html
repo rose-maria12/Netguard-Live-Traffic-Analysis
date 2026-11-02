@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}Evaluation Metrics & Benchmarks — NetGuard{% endblock %}
+{% block topbar_title %}Module 4 — Detection Evaluation & Benchmarks{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Detector Evaluation &amp; Dataset Benchmarks</h1>
+        <p class="page-subtitle">Standardized evaluation metrics (Precision, Recall, F1, Confusion Matrix, Throughput) across controlled ground-truth annotations and CIC-IDS2017 benchmark flows.</p>
+    </div>
+</div>
+
+<!-- Alert-type breakdown from real DB -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Alert Type Distribution (Database)</h2>
+        <span class="card-badge">{{ type_counts|length }} detector categories</span>
+    </div>
+    {% if type_counts %}
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>Alert Type</th><th>Detector Category</th><th>Detected Count</th></tr></thead>
+            <tbody>
+            {% for atype, cnt in type_counts.items() %}
+            <tr>
+                <td><strong>{{ atype }}</strong></td>
+                <td><span style="font-size: 12px; color: var(--text-secondary);">Rule-Based / ML</span></td>
+                <td><span class="badge badge-info">{{ cnt }} alerts</span></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>No Alerts in Database</h3>
+        <p>Upload and analyze a PCAP file to view alert distribution.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Ground-Truth Evaluation Results -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Controlled Ground-Truth Evaluation</h2>
+        {% if truth_files %}
+        <span class="card-badge">{{ truth_files|length }} ground-truth file(s)</span>
+        {% endif %}
+    </div>
+
+    {% if truth_files %}
+    <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;">
+        Ground-truth annotations: <code>{{ truth_files | join(', ') }}</code>
+    </p>
+    {% endif %}
+
+    {% if eval_error %}
+    <div class="alert-flash error">Evaluation notice: {{ eval_error }}</div>
+    {% endif %}
+
+    {% if eval_results %}
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Detector</th>
+                    <th>True Pos (TP)</th>
+                    <th>False Pos (FP)</th>
+                    <th>False Neg (FN)</th>
+                    <th>Precision</th>
+                    <th>Recall</th>
+                    <th>F1-Score</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for det, m in eval_results.items() %}
+            <tr>
+                <td><strong>{{ det }}</strong></td>
+                <td style="color: var(--color-success); font-weight: 700;">{{ m.TP }}</td>
+                <td style="color: var(--color-critical);">{{ m.FP }}</td>
+                <td style="color: var(--color-medium);">{{ m.FN }}</td>
+                {% if m.evaluated %}
+                <td><strong>{{ "%.1f"|format(m.precision * 100) }}%</strong></td>
+                <td><strong>{{ "%.1f"|format(m.recall * 100) }}%</strong></td>
+                <td><strong style="color: var(--primary);">{{ "%.1f"|format(m.f1 * 100) }}%</strong></td>
+                <td><span class="badge badge-success">Evaluated</span></td>
+                {% else %}
+                <td colspan="3" style="color:var(--text-muted);text-align:center;">Pending lab traffic</td>
+                <td><span class="badge badge-muted">Pending</span></td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif not eval_error %}
+    <div class="empty-state">
+        <h3>Evaluation Not Run</h3>
+        <p>Ground-truth annotation files in <code>tests/data/truth/</code> are matched against detection runs to compute Precision, Recall, and F1.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Authentic Dataset Benchmark Results -->
+{% if dataset_benchmark %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Dataset Benchmark: {{ dataset_benchmark.dataset_name }}</h2>
+        <span class="badge badge-info">{{ dataset_benchmark.total_flows }} Flows ({{ dataset_benchmark.throughput_fps }} flows/sec)</span>
+    </div>
+
+    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;">
+        <strong>Institution:</strong> {{ dataset_benchmark.metadata.institution }} &bull;
+        <strong>Reference:</strong> <a href="{{ dataset_benchmark.metadata.official_url }}" target="_blank">{{ dataset_benchmark.metadata.official_url }}</a>
+    </div>
+
+    <!-- Performance Metric Badges Grid -->
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin-bottom: 18px;">
+        <div class="stat-card" style="padding: 12px 14px; text-align: center;">
+            <div class="stat-label">Accuracy</div>
+            <div style="font-size:20px;font-weight:700;color:var(--color-success);margin-top:4px;">{{ "%.1f"|format(dataset_benchmark.metrics.accuracy * 100) }}%</div>
+        </div>
+        <div class="stat-card" style="padding: 12px 14px; text-align: center;">
+            <div class="stat-label">Precision</div>
+            <div style="font-size:20px;font-weight:700;color:var(--color-success);margin-top:4px;">{{ "%.1f"|format(dataset_benchmark.metrics.precision * 100) }}%</div>
+        </div>
+        <div class="stat-card" style="padding: 12px 14px; text-align: center;">
+            <div class="stat-label">Recall</div>
+            <div style="font-size:20px;font-weight:700;color:var(--color-success);margin-top:4px;">{{ "%.1f"|format(dataset_benchmark.metrics.recall * 100) }}%</div>
+        </div>
+        <div class="stat-card" style="padding: 12px 14px; text-align: center;">
+            <div class="stat-label">F1-Score</div>
+            <div style="font-size:20px;font-weight:700;color:var(--primary);margin-top:4px;">{{ "%.4f"|format(dataset_benchmark.metrics.f1_score) }}</div>
+        </div>
+        <div class="stat-card" style="padding: 12px 14px; text-align: center;">
+            <div class="stat-label">False Pos Rate</div>
+            <div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-top:4px;">{{ "%.1f"|format(dataset_benchmark.metrics.false_positive_rate * 100) }}%</div>
+        </div>
+    </div>
+
+    <!-- Confusion Matrix -->
+    <div class="form-label">Confusion Matrix</div>
+    <div class="table-responsive" style="margin-bottom: 18px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ground Truth \ Predicted</th>
+                    <th>Predicted Negative (Benign)</th>
+                    <th>Predicted Positive (Malicious)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Actual Negative (Benign)</strong></td>
+                    <td style="color:var(--color-success);font-weight:700;">{{ dataset_benchmark.confusion_matrix.TN }} (TN)</td>
+                    <td style="color:var(--color-critical);font-weight:700;">{{ dataset_benchmark.confusion_matrix.FP }} (FP)</td>
+                </tr>
+                <tr>
+                    <td><strong>Actual Positive (Malicious)</strong></td>
+                    <td style="color:var(--color-medium);font-weight:700;">{{ dataset_benchmark.confusion_matrix.FN }} (FN)</td>
+                    <td style="color:var(--color-success);font-weight:700;">{{ dataset_benchmark.confusion_matrix.TP }} (TP)</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Attack Breakdown -->
+    <div class="form-label">Attack Class Breakdown</div>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Attack Class</th>
+                    <th>Total Flows</th>
+                    <th>Detected Flows</th>
+                    <th>Detection Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cls_name, stats in dataset_benchmark.attack_breakdown.items() %}
+                <tr>
+                    <td><strong>{{ cls_name }}</strong></td>
+                    <td>{{ stats.total }}</td>
+                    <td>{{ stats.detected }}</td>
+                    <td>
+                        {% if stats.total > 0 %}
+                        <span class="badge badge-{% if stats.detected == stats.total %}success{% elif stats.detected > 0 %}info{% else %}muted{% endif %}">
+                            {{ "%.1f"|format(stats.detected / stats.total * 100) }}%
+                        </span>
+                        {% else %}&mdash;{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent analysis runs -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Recent Analysis Pipeline Runs</h2>
+        <span class="card-badge">{{ runs|length }} runs</span>
+    </div>
+    {% if runs %}
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Run ID</th>
+                    <th>Capture File</th>
+                    <th>Status</th>
+                    <th>Alerts</th>
+                    <th>Incidents</th>
+                    <th>Packets</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in runs %}
+            <tr>
+                <td><strong>#{{ r.id }}</strong></td>
+                <td><code>{{ r.filename }}</code></td>
+                <td><span class="badge badge-{% if r.status == 'completed' %}success{% elif r.status == 'failed' %}critical{% else %}info{% endif %}">{{ r.status }}</span></td>
+                <td>{{ r.stats.get('alerts_count', 0) if r.stats else '—' }}</td>
+                <td>{{ r.stats.get('incidents_count', 0) if r.stats else '—' }}</td>
+                <td>{{ "{:,}".format(r.packets_stored) if r.packets_stored else '—' }}</td>
+                <td style="font-size:12px;color:var(--text-muted);" {% if r.started_at %}data-ts="{{ r.started_at }}"{% endif %}>
+                    {% if r.started_at %}{{ r.started_at | int }}{% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>No Analysis Runs Yet</h3>
+        <p>Upload a PCAP file to initiate the analysis pipeline.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

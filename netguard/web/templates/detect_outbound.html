@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Outbound Traffic Detector — NetGuard{% endblock %}
+{% block topbar_title %}Module 2 — Abnormal Outbound Traffic Detection{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Abnormal Outbound Traffic Detection</h1>
+        <p class="page-subtitle">Monitors host egress byte volume, asymmetric upload-to-download ratios, and non-standard port transfers across 20-second windows.</p>
+    </div>
+    <span class="stage-badge stage-exfiltration" style="font-size: 12px; padding: 4px 10px;">Stage: Possible Exfiltration</span>
+</div>
+
+<details class="how-it-works">
+    <summary>How Outbound Heuristics Work &amp; Normal Browsing Considerations</summary>
+    <div class="how-it-works-body">
+        <p style="margin-bottom: 8px;">
+            Evaluates internal-to-external flows in 20s windows across three heuristic conditions:
+            <strong>(1) High Volume</strong> (&ge;{{ "%.1f"|format(config.bytes_per_window / 1048576) }} MB egress),
+            <strong>(2) Asymmetric Upload Ratio</strong> (&ge;{{ config.upload_ratio }}:1 outbound-to-inbound ratio when egress &ge;200 KB), and
+            <strong>(3) Unusual Port Transfer</strong> (&ge;{{ "%.0f"|format(config.unusual_port_bytes / 1024) }} KB on ports outside <code>{{ config.allowed_ports | join(', ') }}</code>).
+        </p>
+        <p style="margin: 0 0 8px 0; font-size: 12px; color: var(--text-muted);">
+            <strong>Analyst Interpretation Note:</strong> Legitimate HTTPS uploads, cloud backups, or telemetry bursts on port 443 can produce high outbound-to-inbound ratios (`outbound_ratio`). Review the destination IP, port, and corroborating alerts before treating a single ratio indicator as malicious exfiltration.
+        </p>
+        <div class="param-strip">
+            <span class="param-pill">Volume Threshold: <strong>&ge; {{ "%.1f"|format(config.bytes_per_window / 1048576) }} MB</strong></span>
+            <span class="param-pill">Upload Ratio: <strong>&ge; {{ config.upload_ratio }}:1 (min 200 KB)</strong></span>
+            <span class="param-pill">Unusual Port Volume: <strong>&ge; {{ "%.0f"|format(config.unusual_port_bytes / 1024) }} KB</strong></span>
+            <span class="param-pill">Allowed Ports: <strong>{{ config.allowed_ports | join(', ') }}</strong></span>
+        </div>
+    </div>
+</details>
+
+<!-- Scenario Suggested Precautions & Next Steps -->
+<div class="card" style="border-left: 4px solid var(--primary); background: var(--bg-card); margin-bottom: 20px;">
+    <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <div style="font-size: 20px; color: var(--primary); line-height: 1.2;">🛡️</div>
+        <div>
+            <div style="font-size: 11.5px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+                Flag: <span style="color: var(--text-primary);">Unusual outbound traffic</span> &bull; Suggested Precautions / Next Steps
+            </div>
+            <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5;">
+                Check for uploads, backups, or synchronisation. Identify the process and destination. If confirmed suspicious, consider restricting outbound access or isolating the device.
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Outbound Heuristic Alerts</div>
+        <div class="stat-value" data-count="{{ alerts|length }}" style="margin-top: 4px;">{{ alerts|length }}</div>
+        <div class="stat-detail">Egress volume &amp; upload ratio indicators</div>
+    </div>
+</div>
+
+{% if not alerts %}
+<div class="card">
+    <div class="empty-state">
+        <h3>No Abnormal Outbound Activity Detected</h3>
+        <p>No internal host exceeded the egress volume, upload ratio, or non-standard port thresholds within any 20-second window.</p>
+    </div>
+</div>
+{% else %}
+{% for a in alerts %}
+<div class="card" style="border-left: 3px solid var(--color-medium);">
+    <div class="card-header">
+        <h2 class="card-title">
+            Alert #{{ a.id }} ({{ a.alert_type }}): Outbound Indicator from <code>{{ a.src_ip }}</code> &rarr; <code>{{ a.dst_ip if a.dst_ip else 'External Target' }}{% if a.dst_port %}:{{ a.dst_port }}{% endif %}</code>
+        </h2>
+        <span class="badge badge-{{ a.severity|lower }}">{{ a.severity }}</span>
+    </div>
+    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;">{{ a.summary }}</p>
+
+    <div class="result-detail" style="margin-bottom: 14px;">
+        <div class="result-detail-item">
+            <span class="result-detail-label">Source IP</span>
+            <span class="result-detail-value"><code>{{ a.src_ip }}</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Destination</span>
+            <span class="result-detail-value"><code>{{ a.dst_ip if a.dst_ip else 'External' }}{% if a.dst_port %}:{{ a.dst_port }}{% endif %}</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Triggered Rule</span>
+            <span class="result-detail-value"><code>{{ a.rule_name }}</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Outgoing Bytes</span>
+            <span class="result-detail-value" style="font-weight: 700;">{{ "{:,}".format(a.details.get('observed_bytes_out', 0)) }} B</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Incoming Bytes</span>
+            <span class="result-detail-value">{{ "{:,}".format(a.details.get('observed_bytes_in', 0)) }} B</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Out / In Ratio</span>
+            <span class="result-detail-value">{{ "%.2f"|format(a.details.get('observed_out_in_ratio', 0)) }}:1</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Confidence</span>
+            <span class="result-detail-value">{{ "%.2f"|format(a.confidence) }}</span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Window Frame Span</span>
+            <span class="result-detail-value">#{{ a.first_frame }}&ndash;#{{ a.last_frame }}</span>
+        </div>
+    </div>
+
+    <!-- Suggested Precautions / Next Steps -->
+    <div style="margin-top: 12px; margin-bottom: 12px; padding: 10px 14px; background: rgba(56, 189, 248, 0.08); border-left: 3px solid var(--primary); border-radius: var(--radius-sm); font-size: 13px;">
+        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px;">Suggested Precautions / Next Steps:</div>
+        <div style="color: var(--text-primary); line-height: 1.45;">{{ a.suggested_precautions or "Check for uploads, backups, or synchronisation. Identify the process and destination. If confirmed suspicious, consider restricting outbound access or isolating the device." }}</div>
+    </div>
+
+    <div class="filter-box" style="margin-bottom: 8px;">
+        <div>
+            <div style="font-size: 10.5px; color: var(--text-muted); font-weight: 600;">TRIGGER-DIRECTION WIRESHARK FILTER:</div>
+            <code>{{ a.wireshark_filter }}</code>
+        </div>
+        <button onclick="copyToClipboard('{{ a.wireshark_filter }}', this)" class="btn btn-sm btn-outline">Copy Trigger Filter</button>
+    </div>
+    {% if a.wireshark_bi_filter %}
+    <div class="filter-box">
+        <div>
+            <div style="font-size: 10.5px; color: var(--text-muted); font-weight: 600;">BIDIRECTIONAL INVESTIGATION FILTER:</div>
+            <code>{{ a.wireshark_bi_filter }}</code>
+        </div>
+        <button onclick="copyToClipboard('{{ a.wireshark_bi_filter }}', this)" class="btn btn-sm btn-outline">Copy Bidirectional</button>
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

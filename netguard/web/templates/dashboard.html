@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+
+{% block title %}Executive Threat Dashboard — NetGuard{% endblock %}
+{% block topbar_title %}Executive Threat Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Executive Threat Dashboard</h1>
+        <p class="page-subtitle">Unified operational telemetry across network captures, heuristic rule detectors, Isolation Forest anomaly scoring, and correlated multi-stage incidents.</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <a href="/live" class="btn btn-outline">Live Monitor</a>
+        <a href="{{ url_for('upload') }}" class="btn btn-primary">Import PCAP</a>
+    </div>
+</div>
+
+<!-- Key Telemetry Counters -->
+<div class="stats-grid">
+    <div class="stat-card stat-blue">
+        <div class="stat-card-header">
+            <span class="stat-label">{% if analysis_ctx and not analysis_ctx.is_all_captures %}Packets Decoded{% else %}Analyzed Captures{% endif %}</span>
+            <div class="stat-card-icon blue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+        </div>
+        <div class="stat-value" data-count="{% if analysis_ctx and not analysis_ctx.is_all_captures and summary_stats %}{{ summary_stats.packets }}{% else %}{{ captures_count }}{% endif %}">
+            {% if analysis_ctx and not analysis_ctx.is_all_captures and summary_stats %}{{ "{:,}".format(summary_stats.packets) }}{% else %}{{ captures_count }}{% endif %}
+        </div>
+        <div class="stat-detail">
+            {% if analysis_ctx and not analysis_ctx.is_all_captures and analysis_ctx.selected_capture %}
+                Frames in {{ analysis_ctx.selected_capture.filename }}
+            {% else %}
+                Ingested PCAP &amp; live sessions
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <span class="stat-label">{% if analysis_ctx and not analysis_ctx.is_all_captures %}Active Flows{% else %}High / Critical Incidents{% endif %}</span>
+            <div class="stat-card-icon green">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+        </div>
+        <div class="stat-value" data-count="{% if analysis_ctx and not analysis_ctx.is_all_captures and summary_stats %}{{ summary_stats.flows }}{% else %}{{ high_crit_incidents }}{% endif %}">
+            {% if analysis_ctx and not analysis_ctx.is_all_captures and summary_stats %}{{ "{:,}".format(summary_stats.flows) }}{% else %}{{ high_crit_incidents }}{% endif %}
+        </div>
+        <div class="stat-detail">
+            {% if analysis_ctx and not analysis_ctx.is_all_captures %}
+                Bidirectional 5-tuple reconstructed flows
+            {% else %}
+                Priority multi-stage incident clusters
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <span class="stat-label">Total Alerts</span>
+            <div class="stat-card-icon orange">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+        </div>
+        <div class="stat-value" data-count="{{ alerts_count }}">{{ alerts_count }}</div>
+        <div class="stat-detail">Deduplicated rule &amp; ML behavioral indicators</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <span class="stat-label">Correlated Incidents</span>
+            <div class="stat-card-icon red">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+        </div>
+        <div class="stat-value" data-count="{{ incidents_count }}">{{ incidents_count }}</div>
+        <div class="stat-detail">Union-Find grouped clusters</div>
+    </div>
+</div>
+
+<!-- Expandable System Architecture Summary -->
+<details class="how-it-works">
+    <summary>How NetGuard's Dual-Engine Pipeline Works (Heuristics, Isolation Forest &amp; Correlation)</summary>
+    <div class="how-it-works-body">
+        <p style="margin-bottom: 8px;">
+            NetGuard processes network traffic in <strong>20-second tumbling windows</strong> across four stages:
+            <strong>(1) Packet &amp; Flow Reconstruction</strong> indexes 1-based Wireshark frame numbers, bidirectional 5-tuple flows, and DNS transactions;
+            <strong>(2) Rule Detectors</strong> evaluate port scanning, SSH/RDP brute-force patterns, DNS tunneling/DGA, and outbound volume ratios;
+            <strong>(3) Isolation Forest ML</strong> scores 9 multivariate host-window features against a 99th-percentile threshold (<code>0.5978</code>) calibrated on CIC-IDS2017 Monday benign traffic;
+            <strong>(4) Incident Correlation</strong> groups alerts via Union-Find (same source or victim-to-source pivot within 300s) and computes a 0&ndash;100 prioritization score.
+        </p>
+        <p style="margin: 0; font-size: 12px; color: var(--text-muted);">
+            <strong>Note on Behavioral Indicators:</strong> Heuristic alerts (such as high outbound-to-inbound byte ratios during browser uploads) are network indicators for analyst review, not automatic proof of host compromise.
+        </p>
+    </div>
+</details>
+
+{% if analysis_ctx and not analysis_ctx.is_all_captures and analysis_ctx.selected_capture %}
+<!-- Scoped Capture Results Summary Card -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            Scoped Capture Analysis: <code>{{ analysis_ctx.selected_capture.filename }}</code>
+        </h2>
+        <div style="display: flex; gap: 8px;">
+            {% if analysis_ctx.run_id %}
+            <a href="{{ url_for('report_html', run_id=analysis_ctx.run_id) }}" class="btn btn-sm btn-outline" target="_blank">Export HTML</a>
+            <a href="{{ url_for('report_json', run_id=analysis_ctx.run_id) }}" class="btn btn-sm btn-outline" target="_blank">Export JSON</a>
+            {% endif %}
+        </div>
+    </div>
+    <div class="result-detail">
+        <div class="result-detail-item">
+            <span class="result-detail-label">Capture File / ID</span>
+            <span class="result-detail-value">#{{ analysis_ctx.selected_capture.id }}: <code>{{ analysis_ctx.selected_capture.filename }}</code></span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Analysis Run</span>
+            <span class="result-detail-value">
+                Run #{{ analysis_ctx.run_id or 'None' }}
+                <span class="badge {% if analysis_ctx.selected_run and analysis_ctx.selected_run.status == 'completed' %}badge-success{% else %}badge-medium{% endif %}">
+                    {{ (analysis_ctx.selected_run.status if analysis_ctx.selected_run else 'Pending')|upper }}
+                </span>
+            </span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Telemetry Footprint</span>
+            <span class="result-detail-value">
+                <strong>{{ summary_stats.packets }}</strong> pkts &bull; <strong>{{ summary_stats.flows }}</strong> flows &bull; <strong>{{ summary_stats.dns }}</strong> DNS events
+            </span>
+        </div>
+        <div class="result-detail-item">
+            <span class="result-detail-label">Detector Findings</span>
+            <span class="result-detail-value" style="font-weight: 600; color: {% if alerts_count > 0 %}var(--color-medium){% else %}var(--color-success){% endif %};">
+                {% if alerts_count == 0 %}
+                    0 Alerts (No thresholds exceeded)
+                {% else %}
+                    {{ alerts_count }} alert(s) &bull; {{ incidents_count }} incident(s)
+                {% endif %}
+            </span>
+        </div>
+    </div>
+
+    <div class="param-strip" style="margin-top: 12px;">
+        <span class="param-pill">Port Scan: <strong>{{ alert_types.get('port_scan', 0) }}</strong></span>
+        <span class="param-pill">Brute Force: <strong>{{ alert_types.get('brute_force', 0) }}</strong></span>
+        <span class="param-pill">DNS Anomaly: <strong>{{ alert_types.get('dns_anomaly', 0) }}</strong></span>
+        <span class="param-pill">Outbound: <strong>{{ alert_types.get('abnormal_outbound', 0) }}</strong></span>
+        <span class="param-pill">Isolation Forest ML: <strong>{{ alert_types.get('ml_anomaly', 0) }}</strong></span>
+    </div>
+</div>
+{% endif %}
+
+<div class="grid-2-1">
+    <!-- Priority Security Incidents -->
+    <div class="card" style="margin-bottom: 0;">
+        <div class="card-header">
+            <h2 class="card-title">Priority Security Incidents</h2>
+            <a href="{{ url_for('incidents') }}" class="btn btn-sm btn-outline">View All Incidents</a>
+        </div>
+        {% if not top_incidents %}
+            <div class="empty-state">
+                <h3>No Security Incidents</h3>
+                <p>Upload a network capture file or run Live Monitor to evaluate traffic.</p>
+            </div>
+        {% else %}
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Incident ID</th>
+                            <th>Primary Source IP</th>
+                            <th>Stages</th>
+                            <th>Severity Band</th>
+                            <th>Score</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for inc in top_incidents %}
+                        <tr>
+                            <td><strong>#{{ inc.id }}</strong></td>
+                            <td><code>{{ inc.primary_ip }}</code></td>
+                            <td>{{ inc.stage_count }} stage(s)</td>
+                            <td><span class="badge badge-{{ inc.level|lower }}">{{ inc.level }}</span></td>
+                            <td><strong>{{ "%.1f"|format(inc.score) }}</strong> / 100</td>
+                            <td><a href="{{ url_for('incident_detail', incident_id=inc.id) }}" class="btn btn-sm btn-outline">Investigate</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Detection Distribution -->
+    <div class="card card-blue" style="margin-bottom: 0;">
+        <div class="card-header">
+            <h2 class="card-title">Detection Distribution</h2>
+            <span class="card-badge" style="background: #ffffff;">{{ alerts_count }} alerts</span>
+        </div>
+        <div id="detector-chart"></div>
+
+        <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+            <div class="form-label" style="margin-bottom: 10px;">Kill-Chain Stage Distribution</div>
+            <div id="stage-chart"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Captures -->
+<div class="card" style="margin-top: 18px;">
+    <div class="card-header">
+        <h2 class="card-title">Recent PCAP Ingestion Sessions</h2>
+        <a href="{{ url_for('upload') }}" class="btn btn-sm btn-outline">Manage Captures</a>
+    </div>
+    {% if not recent_captures %}
+        <div class="empty-state">
+            <h3>No Captures Ingested</h3>
+            <p>Upload .pcap or .pcapng files to initiate packet decoding and bidirectional flow reconstruction.</p>
+        </div>
+    {% else %}
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Capture ID</th>
+                        <th>Filename</th>
+                        <th>SHA-256 Digest</th>
+                        <th>Packets Stored</th>
+                        <th>Flows Built</th>
+                        <th>Skipped Frames</th>
+                        <th>Ingest Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cap in recent_captures %}
+                    <tr>
+                        <td><strong>#{{ cap.id }}</strong></td>
+                        <td><a href="{{ url_for('dashboard', capture_id=cap.id) }}"><code>{{ cap.filename }}</code></a></td>
+                        <td><code>{{ cap.sha256[:16] }}&hellip;</code></td>
+                        <td>{{ "{:,}".format(cap.packets_stored) }}</td>
+                        <td><strong>{{ "{:,}".format(cap.flows_count|default(0)) }}</strong></td>
+                        <td>{{ cap.frames_skipped }}</td>
+                        <td title="Indicates PCAP ingestion succeeded, not whether traffic is benign">
+                            <span class="badge badge-{% if cap.status == 'ok' %}success{% else %}critical{% endif %}">
+                                {% if cap.status == 'ok' %}ingested (parsed ok){% else %}{{ cap.status }}{% endif %}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var detectorData = [
+        {% for key, val in detector_activity.items() %}
+        { label: '{{ key }}', value: {{ val }}, color: 'bar-blue' },
+        {% endfor %}
+    ];
+    if (detectorData.length > 0) {
+        renderBarChart('detector-chart', detectorData, 0);
+    } else {
+        document.getElementById('detector-chart').innerHTML = '<div class="empty-state" style="padding: 18px;"><p>No detector findings in current scope.</p></div>';
+    }
+
+    var stageData = [
+        {% for key, val in stage_dist.items() %}
+        { label: '{{ key }}', value: {{ val }}, color: 'bar-orange' },
+        {% endfor %}
+    ];
+    if (stageData.length > 0) {
+        renderBarChart('stage-chart', stageData, 0);
+    } else {
+        document.getElementById('stage-chart').innerHTML = '<div class="empty-state" style="padding: 18px;"><p>No stages triggered in current scope.</p></div>';
+    }
+});
+</script>
+{% endblock %}

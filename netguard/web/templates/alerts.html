@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Alerts Queue — NetGuard{% endblock %}
+{% block topbar_title %}Deduplicated Alerts Queue{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Deduplicated Network Alerts</h1>
+        <p class="page-subtitle">Heuristic rule indicators and Isolation Forest anomaly findings recorded in the current analysis scope.</p>
+    </div>
+</div>
+
+<details class="how-it-works">
+    <summary>How Alert Deduplication &amp; Severity Classification Work</summary>
+    <div class="how-it-works-body">
+        <p style="margin: 0;">
+            Identical findings from the same detector, Source IP, Destination IP, and port within adjacent windows are merged into a single deduplicated alert record with combined frame spans.
+            <strong>Note:</strong> Medium-severity heuristic indicators (such as <code>outbound_ratio</code> on HTTPS port 443) highlight asymmetric traffic patterns for analyst triage and do not automatically indicate malicious activity.
+        </p>
+    </div>
+</details>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Stored Detection Alerts</h2>
+        <span class="card-badge">{% if alerts %}{{ alerts|length }}{% else %}0{% endif %} alerts</span>
+    </div>
+    {% if not alerts %}
+        <div class="empty-state">
+            <h3>No Alerts Detected</h3>
+            <p>No rule or ML alerts exist in the current capture scope.</p>
+        </div>
+    {% else %}
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Alert Type</th>
+                        <th>Rule Name</th>
+                        <th>Stage</th>
+                        <th>Severity</th>
+                        <th>Confidence</th>
+                        <th>Source IP</th>
+                        <th>Destination IP</th>
+                        <th>Merged</th>
+                        <th>Evidence</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in alerts %}
+                    <tr>
+                        <td><strong>#{{ a.id }}</strong></td>
+                        <td>
+                            <strong>{{ a.alert_type }}</strong>
+                            {% if a.suggested_precautions %}
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;" title="{{ a.suggested_precautions }}">
+                                <span style="color: var(--primary); font-weight: 600;">Next Steps:</span> {{ a.suggested_precautions[:75] }}{% if a.suggested_precautions|length > 75 %}&hellip;{% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td><code>{{ a.rule_name }}</code></td>
+                        <td>{{ a.stage }}</td>
+                        <td><span class="badge badge-{{ a.severity|lower }}">{{ a.severity }}</span></td>
+                        <td>{{ "%.2f"|format(a.confidence) }}</td>
+                        <td><code>{{ a.src_ip }}</code></td>
+                        <td><code>{{ a.dst_ip if a.dst_ip else '—' }}{% if a.dst_port %}:{{ a.dst_port }}{% endif %}</code></td>
+                        <td>{{ a.merged_count }}</td>
+                        <td>{{ a.evidence_count }} ref(s)</td>
+                        <td><a href="{{ url_for('evidence', alert_id=a.id) }}" class="btn btn-sm btn-outline">Evidence</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
