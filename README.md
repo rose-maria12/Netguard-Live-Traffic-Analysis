@@ -115,10 +115,7 @@ pip install -r requirements.txt
 ```
 
 ### 3. Verify Npcap (For Live Sniffing)
-Download and install Npcap from [npcap.com](https://npcap.com/#download). During installation, ensure:
-- [x] **"WinPcap API-compatible Mode"**
-- [x] **"Support loopback traffic"**
-
+Download and install Npcap from [npcap.com](https://npcap.com/#download).
 ---
 
 ## Quick Start & Usage
@@ -129,7 +126,7 @@ Open an elevated PowerShell terminal (Administrator mode required for real Windo
 python run.py
 ```
 Access the web dashboard in your browser:
-👉 **`http://127.0.0.1:5000`**
+ **`http://127.0.0.1:5000`**
 
 ### 2. Run the Full Automated Test Suite
 ```powershell
@@ -187,11 +184,5 @@ Comprehensive engineering, laboratory, and oral defense guides are maintained in
 
 ---
 
-## Academic & Technical Disclaimers
-
-1. **Heuristic Score Nature**: The 0–100 incident score is a triage prioritization metric to rank an analyst's queue; it is not a statistical probability of compromise.
-2. **Connection Pattern Heuristic**: Brute-force detection identifies rapid connection attempts on authentication ports. It does not inspect encrypted TLS/SSH credentials.
-3. **Encrypted Payloads**: Operates on packet headers, flow statistics, and DNS query names. It does not perform active TLS decryption or SSL inspection.
-4. **Safety Filter**: Firewall prevention strictly protects loopback (`127.0.0.1`), host interface IPs, default gateways, and local DNS resolvers from being blocked.
 
 
